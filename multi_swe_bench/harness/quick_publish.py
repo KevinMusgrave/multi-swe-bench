@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -69,6 +70,10 @@ def main():
     # Build command for batch_build_and_publish.py (in same directory)
     script_dir = Path(__file__).parent
     batch_script = script_dir / 'batch_build_and_publish.py'
+    
+    # Find the repository root (where multi_swe_bench package is)
+    repo_root = script_dir.parent.parent
+    
     cmd = [
         'python', str(batch_script),
         '--input', str(args.input_file),
@@ -88,9 +93,13 @@ def main():
     
     print(f"Running: {' '.join(cmd)}")
     
+    # Set up environment with PYTHONPATH
+    env = os.environ.copy()
+    env['PYTHONPATH'] = str(repo_root)
+    
     # Execute the command
     try:
-        result = subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, check=True, env=env)
         sys.exit(result.returncode)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
