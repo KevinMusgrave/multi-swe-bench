@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -190,18 +191,34 @@ class DockerImageBuilder:
             
             logger.debug(f"Build command: {' '.join(cmd)}")
             
+            # Set up environment with PYTHONPATH
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(self.repo_root)
+            
             # Run build
             result = subprocess.run(
                 cmd,
                 cwd=self.repo_root,
                 capture_output=True,
                 text=True,
-                timeout=1800  # 30 minute timeout
+                timeout=1800,  # 30 minute timeout
+                env=env
             )
             
             if result.returncode == 0:
+                logger.debug(f"Build command stdout: {result.stdout}")
+                logger.debug(f"Build command stderr: {result.stderr}")
+                
                 # Tag the image with our registry name
                 local_image = f"mswebench/{instance.image_name}:{instance.image_tag}"
+                
+                # Check if the image actually exists
+                if not self.check_image_exists_locally(local_image):
+                    error_msg = f"Build reported success but image {local_image} does not exist locally"
+                    logger.error(f"❌ {instance.instance_id}: {error_msg}")
+                    logger.debug(f"Build stdout: {result.stdout}")
+                    logger.debug(f"Build stderr: {result.stderr}")
+                    return False, error_msg
                 
                 if local_image != full_image_name:
                     tag_result = subprocess.run(

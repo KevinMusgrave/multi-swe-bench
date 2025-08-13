@@ -65,6 +65,18 @@ def main():
         help='Show what would be done without doing it'
     )
     
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
+    
+    parser.add_argument(
+        '--skip-commit-check',
+        action='store_true',
+        help='Skip commit hash validation (useful for testing)'
+    )
+    
     args = parser.parse_args()
     
     # Build command for batch_build_and_publish.py (in same directory)
@@ -90,6 +102,12 @@ def main():
     
     if args.dry_run:
         cmd.append('--dry-run')
+    
+    if args.debug:
+        cmd.append('--verbose')
+    
+    if args.skip_commit_check:
+        cmd.append('--skip-commit-hash-check')
     
     print(f"Running: {' '.join(cmd)}")
     
