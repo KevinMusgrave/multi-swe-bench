@@ -160,7 +160,7 @@ set -e
 
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch
-echo "Test patch applied successfully"
+echo "UPDATED TEST SCRIPT - Test patch applied successfully - DEBUG MARKER 12345"
 
 # Run Ruby syntax validation tests
 echo "Running Ruby syntax validation tests..."
@@ -386,21 +386,12 @@ class Selenium(Instance):
         """Parse test results from the TEST_RESULTS output format."""
         import re
         
-        passed_tests = set()
-        failed_tests = set()
-        skipped_tests = set()
-        
         # Look for our TEST_RESULTS format: TEST_RESULTS:PASSED=X:FAILED=Y:SKIPPED=Z:TOTAL=W
         test_results_pattern = re.compile(r"TEST_RESULTS:PASSED=(\d+):FAILED=(\d+):SKIPPED=(\d+):TOTAL=(\d+)")
         
-        # Also look for individual test results
-        pass_pattern = re.compile(r"PASS: (.+)")
-        fail_pattern = re.compile(r"FAIL: (.+)")
-        
+        # First pass: check if we have TEST_RESULTS format
         for line in test_log.splitlines():
             line = line.strip()
-            
-            # Check for our summary format
             results_match = test_results_pattern.search(line)
             if results_match:
                 passed_count = int(results_match.group(1))
@@ -408,14 +399,17 @@ class Selenium(Instance):
                 skipped_count = int(results_match.group(3))
                 total_count = int(results_match.group(4))
                 
-                # Create generic test names if we don't have specific ones
-                if not passed_tests and not failed_tests and not skipped_tests:
-                    for i in range(passed_count):
-                        passed_tests.add(f"test_{i+1}")
-                    for i in range(failed_count):
-                        failed_tests.add(f"test_{passed_count+i+1}")
-                    for i in range(skipped_count):
-                        skipped_tests.add(f"test_{passed_count+failed_count+i+1}")
+                # Create generic test names based on counts
+                passed_tests = set()
+                failed_tests = set()
+                skipped_tests = set()
+                
+                for i in range(passed_count):
+                    passed_tests.add(f"test_{i+1}")
+                for i in range(failed_count):
+                    failed_tests.add(f"test_{passed_count+i+1}")
+                for i in range(skipped_count):
+                    skipped_tests.add(f"test_{passed_count+failed_count+i+1}")
                 
                 return TestResult(
                     passed_count=passed_count,
@@ -425,8 +419,18 @@ class Selenium(Instance):
                     failed_tests=failed_tests,
                     skipped_tests=skipped_tests,
                 )
+        
+        # Fallback: if no TEST_RESULTS format found, parse individual test results
+        passed_tests = set()
+        failed_tests = set()
+        skipped_tests = set()
+        
+        pass_pattern = re.compile(r"PASS: (.+)")
+        fail_pattern = re.compile(r"FAIL: (.+)")
+        
+        for line in test_log.splitlines():
+            line = line.strip()
             
-            # Check for individual test results
             pass_match = pass_pattern.search(line)
             if pass_match:
                 test_name = pass_match.group(1).strip()
@@ -437,7 +441,6 @@ class Selenium(Instance):
                 test_name = fail_match.group(1).strip()
                 failed_tests.add(test_name)
         
-        # If no TEST_RESULTS line found, return based on individual results
         return TestResult(
             passed_count=len(passed_tests),
             failed_count=len(failed_tests),
