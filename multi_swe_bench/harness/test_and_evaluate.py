@@ -31,6 +31,8 @@ from multi_swe_bench.utils import docker_util
 
 # Import repository classes to register them
 import multi_swe_bench.harness.repos.java.google.gson
+import multi_swe_bench.harness.repos.java.google.guava
+import multi_swe_bench.harness.repos.java.seleniumhq.selenium
 
 
 class TestEvaluator:

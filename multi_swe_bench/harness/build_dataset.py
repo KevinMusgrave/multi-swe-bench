@@ -226,6 +226,13 @@ def get_parser() -> ArgumentParser:
         default=1800,
         help="The timeout for the agent to run",
     )
+    parser.add_argument(
+        "--skip_commit_hash_check",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Skip commit hash validation (useful for testing with fake data)",
+    )
 
     return parser
 
@@ -264,6 +271,7 @@ class CliArgs:
     run_log: bool = True
     human_mode: bool = True
     agent_timeout: int = 1800
+    skip_commit_hash_check: bool = False
 
     def __post_init__(self):
         self._check_mode()
@@ -575,7 +583,10 @@ class CliArgs:
 
     def run_mode_image(self):
         self.logger.info("Building images...")
-        self.check_commit_hashes()
+        if not self.skip_commit_hash_check:
+            self.check_commit_hashes()
+        else:
+            self.logger.info("Skipping commit hash validation (--skip_commit_hash_check enabled)")
 
         # construct the dependency graph
         external_images: set[str] = set()
