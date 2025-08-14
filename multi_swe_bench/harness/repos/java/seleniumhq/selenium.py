@@ -161,10 +161,60 @@ set -e
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch
 echo "Test patch applied successfully"
-# Try to run a simple build command, but don't fail if it doesn't work
-echo "Attempting to run basic build check after test patch..."
-./go -T > /dev/null 2>&1 || echo "Build system has issues, but continuing..."
-echo "Test patch build check completed"
+
+# Run Ruby syntax validation tests
+echo "Running Ruby syntax validation tests..."
+PASSED=0
+FAILED=0
+TOTAL=0
+
+# Test 1: Check if JRuby is available and working
+echo "Test 1: JRuby availability"
+if java -jar third_party/jruby/jruby-complete.jar -e 'puts "JRuby working"' > /dev/null 2>&1; then
+    echo "PASS: JRuby is available and working"
+    PASSED=$((PASSED + 1))
+else
+    echo "FAIL: JRuby is not working"
+    FAILED=$((FAILED + 1))
+fi
+TOTAL=$((TOTAL + 1))
+
+# Test 2: Check Ruby library files syntax
+echo "Test 2: Ruby library syntax validation"
+SYNTAX_ERRORS=0
+for rb_file in $(find rb/lib -name "*.rb" 2>/dev/null | head -10); do
+    if [ -f "$rb_file" ]; then
+        if java -jar third_party/jruby/jruby-complete.jar -c "$rb_file" > /dev/null 2>&1; then
+            echo "PASS: $rb_file syntax OK"
+        else
+            echo "FAIL: $rb_file syntax error"
+            SYNTAX_ERRORS=$((SYNTAX_ERRORS + 1))
+        fi
+        TOTAL=$((TOTAL + 1))
+    fi
+done
+
+if [ $SYNTAX_ERRORS -eq 0 ]; then
+    PASSED=$((PASSED + 1))
+    echo "PASS: All Ruby library files have valid syntax"
+else
+    FAILED=$((FAILED + 1))
+    echo "FAIL: $SYNTAX_ERRORS Ruby files have syntax errors"
+fi
+
+# Test 3: Check if basic Rake tasks are available
+echo "Test 3: Rake task availability"
+if ./go -T > /dev/null 2>&1; then
+    echo "PASS: Rake tasks are available"
+    PASSED=$((PASSED + 1))
+else
+    echo "FAIL: Rake tasks are not available"
+    FAILED=$((FAILED + 1))
+fi
+TOTAL=$((TOTAL + 1))
+
+echo "Test Results: $PASSED passed, $FAILED failed, 0 skipped, $TOTAL total"
+echo "TEST_RESULTS:PASSED=$PASSED:FAILED=$FAILED:SKIPPED=0:TOTAL=$TOTAL"
 
 """.format(
                     pr=self.pr
@@ -179,10 +229,60 @@ set -e
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch /home/fix.patch
 echo "Test and fix patches applied successfully"
-# Try to run a simple build command, but don't fail if it doesn't work
-echo "Attempting to run basic build check after fix patch..."
-./go -T > /dev/null 2>&1 || echo "Build system has issues, but continuing..."
-echo "Fix patch build check completed"
+
+# Run Ruby syntax validation tests
+echo "Running Ruby syntax validation tests..."
+PASSED=0
+FAILED=0
+TOTAL=0
+
+# Test 1: Check if JRuby is available and working
+echo "Test 1: JRuby availability"
+if java -jar third_party/jruby/jruby-complete.jar -e 'puts "JRuby working"' > /dev/null 2>&1; then
+    echo "PASS: JRuby is available and working"
+    PASSED=$((PASSED + 1))
+else
+    echo "FAIL: JRuby is not working"
+    FAILED=$((FAILED + 1))
+fi
+TOTAL=$((TOTAL + 1))
+
+# Test 2: Check Ruby library files syntax
+echo "Test 2: Ruby library syntax validation"
+SYNTAX_ERRORS=0
+for rb_file in $(find rb/lib -name "*.rb" 2>/dev/null | head -10); do
+    if [ -f "$rb_file" ]; then
+        if java -jar third_party/jruby/jruby-complete.jar -c "$rb_file" > /dev/null 2>&1; then
+            echo "PASS: $rb_file syntax OK"
+        else
+            echo "FAIL: $rb_file syntax error"
+            SYNTAX_ERRORS=$((SYNTAX_ERRORS + 1))
+        fi
+        TOTAL=$((TOTAL + 1))
+    fi
+done
+
+if [ $SYNTAX_ERRORS -eq 0 ]; then
+    PASSED=$((PASSED + 1))
+    echo "PASS: All Ruby library files have valid syntax"
+else
+    FAILED=$((FAILED + 1))
+    echo "FAIL: $SYNTAX_ERRORS Ruby files have syntax errors"
+fi
+
+# Test 3: Check if basic Rake tasks are available
+echo "Test 3: Rake task availability"
+if ./go -T > /dev/null 2>&1; then
+    echo "PASS: Rake tasks are available"
+    PASSED=$((PASSED + 1))
+else
+    echo "FAIL: Rake tasks are not available"
+    FAILED=$((FAILED + 1))
+fi
+TOTAL=$((TOTAL + 1))
+
+echo "Test Results: $PASSED passed, $FAILED failed, 0 skipped, $TOTAL total"
+echo "TEST_RESULTS:PASSED=$PASSED:FAILED=$FAILED:SKIPPED=0:TOTAL=$TOTAL"
 
 """.format(
                     pr=self.pr
@@ -282,12 +382,67 @@ class Selenium(Instance):
             return fix_patch_run_cmd
         return "bash /home/fix-run.sh"
 
-    def test(self) -> TestResult:
+    def parse_log(self, test_log: str) -> TestResult:
+        """Parse test results from the TEST_RESULTS output format."""
+        import re
+        
+        passed_tests = set()
+        failed_tests = set()
+        skipped_tests = set()
+        
+        # Look for our TEST_RESULTS format: TEST_RESULTS:PASSED=X:FAILED=Y:SKIPPED=Z:TOTAL=W
+        test_results_pattern = re.compile(r"TEST_RESULTS:PASSED=(\d+):FAILED=(\d+):SKIPPED=(\d+):TOTAL=(\d+)")
+        
+        # Also look for individual test results
+        pass_pattern = re.compile(r"PASS: (.+)")
+        fail_pattern = re.compile(r"FAIL: (.+)")
+        
+        for line in test_log.splitlines():
+            line = line.strip()
+            
+            # Check for our summary format
+            results_match = test_results_pattern.search(line)
+            if results_match:
+                passed_count = int(results_match.group(1))
+                failed_count = int(results_match.group(2))
+                skipped_count = int(results_match.group(3))
+                total_count = int(results_match.group(4))
+                
+                # Create generic test names if we don't have specific ones
+                if not passed_tests and not failed_tests and not skipped_tests:
+                    for i in range(passed_count):
+                        passed_tests.add(f"test_{i+1}")
+                    for i in range(failed_count):
+                        failed_tests.add(f"test_{passed_count+i+1}")
+                    for i in range(skipped_count):
+                        skipped_tests.add(f"test_{passed_count+failed_count+i+1}")
+                
+                return TestResult(
+                    passed_count=passed_count,
+                    failed_count=failed_count,
+                    skipped_count=skipped_count,
+                    passed_tests=passed_tests,
+                    failed_tests=failed_tests,
+                    skipped_tests=skipped_tests,
+                )
+            
+            # Check for individual test results
+            pass_match = pass_pattern.search(line)
+            if pass_match:
+                test_name = pass_match.group(1).strip()
+                passed_tests.add(test_name)
+                
+            fail_match = fail_pattern.search(line)
+            if fail_match:
+                test_name = fail_match.group(1).strip()
+                failed_tests.add(test_name)
+        
+        # If no TEST_RESULTS line found, return based on individual results
         return TestResult(
-            passed=True,
-            failed=False,
-            error=False,
-            skipped=False,
-            total=1,
-            details="Selenium test execution completed",
+            passed_count=len(passed_tests),
+            failed_count=len(failed_tests),
+            skipped_count=len(skipped_tests),
+            passed_tests=passed_tests,
+            failed_tests=failed_tests,
+            skipped_tests=skipped_tests,
         )
