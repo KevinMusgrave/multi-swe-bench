@@ -51,11 +51,7 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 WORKDIR /home/
 RUN apt-get update && apt-get install -y git openjdk-11-jdk curl wget unzip
-RUN apt-get install -y python3 python3-pip nodejs npm
-
-# Install Bazel
-RUN wget https://github.com/bazelbuild/bazel/releases/download/7.4.1/bazel-7.4.1-linux-x86_64 -O /usr/local/bin/bazel
-RUN chmod +x /usr/local/bin/bazel
+RUN apt-get install -y python3 python3-pip nodejs npm ruby
 
 {code}
 
@@ -134,7 +130,7 @@ git checkout {pr.base.sha}
 bash /home/check_git_changes.sh
 
 # Build the project to ensure dependencies are available
-bazel build //java/... || true
+./go test_java || true
 """.format(
                     pr=self.pr
                 ),
@@ -146,7 +142,7 @@ bazel build //java/... || true
 set -e
 
 cd /home/{pr.repo}
-bazel test //java/...
+./go test_java
 """.format(
                     pr=self.pr
                 ),
@@ -159,7 +155,7 @@ set -e
 
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch
-bazel test //java/...
+./go test_java
 
 """.format(
                     pr=self.pr
@@ -173,7 +169,7 @@ set -e
 
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch /home/fix.patch
-bazel test //java/...
+./go test_java
 
 """.format(
                     pr=self.pr
@@ -263,6 +259,14 @@ class Selenium(Instance):
         return "bash /home/test-run.sh"
 
     def fix_run(self) -> str:
+        return "bash /home/fix-run.sh"
+
+    def test_patch_run(self) -> str:
+        return "bash /home/test-run.sh"
+
+    def fix_patch_run(self, fix_patch_run_cmd: str = "") -> str:
+        if fix_patch_run_cmd:
+            return fix_patch_run_cmd
         return "bash /home/fix-run.sh"
 
     def test(self) -> TestResult:
