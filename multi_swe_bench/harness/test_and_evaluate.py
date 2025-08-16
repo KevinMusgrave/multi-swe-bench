@@ -30,8 +30,10 @@ from multi_swe_bench.harness.test_result import Test, TestResult, TestStatus
 from multi_swe_bench.utils import docker_util
 
 # Import repository classes to register them
+import multi_swe_bench.harness.repos.java.alibaba.sentinel
 import multi_swe_bench.harness.repos.java.google.gson
 import multi_swe_bench.harness.repos.java.google.guava
+import multi_swe_bench.harness.repos.java.google.guice
 import multi_swe_bench.harness.repos.java.seleniumhq.selenium
 
 
@@ -62,9 +64,9 @@ class TestEvaluator:
         number = instance_data['number']
         
         if self.registry:
-            return f"{self.registry}/{org}_m_{repo}:pr-{number}"
+            return f"{self.registry}/{org}_m_{repo}:pr-{number}".lower()
         else:
-            return f"{org}_m_{repo}:pr-{number}"
+            return f"{org}_m_{repo}:pr-{number}".lower()
     
     def check_image_exists(self, image_name: str) -> bool:
         """Check if Docker image exists locally."""
@@ -439,11 +441,18 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
 def load_instances(input_file: Path) -> List[dict]:
     """Load instances from JSONL file."""
     instances = []
+    line_num = 0
     with open(input_file, 'r') as f:
         for line in f:
+            line_num += 1
             line = line.strip()
             if line:
-                instances.append(json.loads(line))
+                try:
+                    instances.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logging.getLogger(__name__).error(f"JSON decode error on line {line_num}: {e}")
+                    logging.getLogger(__name__).error(f"Line content (first 100 chars): {repr(line[:100])}")
+                    raise
     return instances
 
 
@@ -471,6 +480,34 @@ def load_existing_results(output_file: Path) -> Set[str]:
         except (json.JSONDecodeError, IOError) as e:
             logging.getLogger(__name__).warning(f"⚠️  Could not load existing results: {e}")
     return processed_ids
+
+
+def load_and_filter_existing_results(output_file: Path, current_instance_ids: Set[str]) -> List[dict]:
+    """
+    Load existing results and filter out instances that are being reprocessed.
+    
+    Args:
+        output_file: Path to existing results file
+        current_instance_ids: Set of instance IDs being processed in current run
+        
+    Returns:
+        List of existing results that should be preserved
+    """
+    preserved_results = []
+    if output_file.exists():
+        try:
+            with open(output_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        result = json.loads(line)
+                        instance_id = result.get('instance_id')
+                        # Only preserve results for instances not being reprocessed
+                        if instance_id and instance_id not in current_instance_ids:
+                            preserved_results.append(result)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.getLogger(__name__).warning(f"⚠️  Could not load existing results: {e}")
+    return preserved_results
 
 
 def append_result(result: dict, output_file: Path):
@@ -509,12 +546,22 @@ Examples:
   # Sequential processing with debug logging
   python test_and_evaluate.py --input instances.jsonl --output results.jsonl \\
     --max-workers 1 --log-level DEBUG
+  
+  # Process only first 5 instances
+  python test_and_evaluate.py --input instances.jsonl --output results.jsonl \\
+    --limit 5
+  
+  # Force reprocessing of instances in input file (preserves other results)
+  python test_and_evaluate.py --input new_instances.jsonl --output results.jsonl \\
+    --force
 
 Features:
   - Progressive output: Results are saved as each instance completes
   - Resume capability: Automatically skips already processed instances
   - Parallel processing: Configurable number of worker threads
   - Error handling: Graceful handling of failed instances
+  - Limit processing: Process only first N instances with --limit
+  - Selective force reprocessing: Only reprocess instances in current input file
         """
     )
     
@@ -565,6 +612,18 @@ Features:
         help="Disable progressive output (save all results at end instead of as they complete)"
     )
     
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Only process the first N instances from the input file"
+    )
+    
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force reprocessing of instances in current input file, preserving results for other instances"
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
@@ -593,6 +652,11 @@ Features:
         instances = load_instances(args.input)
         logger.info(f"✅ Loaded {len(instances)} instances")
         
+        # Apply limit if specified
+        if args.limit:
+            instances = instances[:args.limit]
+            logger.info(f"🔢 Limiting to first {args.limit} instances")
+        
         # Create evaluator
         evaluator = TestEvaluator(
             max_workers=args.max_workers,
@@ -611,11 +675,36 @@ Features:
                 save_results(results, args.output)
                 processed_ids = set()  # No previously processed instances in batch mode
             else:
-                # Load existing results to skip already processed instances
-                logger.info("🔍 Checking for existing results...")
-                processed_ids = load_existing_results(args.output)
-                if processed_ids:
-                    logger.info(f"📋 Found {len(processed_ids)} already processed instances")
+                # Load existing results to skip already processed instances (unless force is enabled)
+                if args.force:
+                    logger.info("🔄 Force mode enabled - will reprocess instances in current input")
+                    
+                    # Get instance IDs from current input
+                    current_instance_ids = set()
+                    for instance in instances:
+                        if 'instance_id' in instance:
+                            current_instance_ids.add(instance['instance_id'])
+                    
+                    # Load existing results and preserve those not being reprocessed
+                    preserved_results = load_and_filter_existing_results(args.output, current_instance_ids)
+                    
+                    if preserved_results:
+                        logger.info(f"📋 Preserving {len(preserved_results)} existing results not in current input")
+                        # Rewrite output file with only preserved results
+                        save_results(preserved_results, args.output)
+                    else:
+                        # No results to preserve, clear the file
+                        if args.output.exists():
+                            logger.info(f"🗑️  Clearing existing output file: {args.output}")
+                            args.output.unlink()
+                    
+                    # Don't skip any instances from current input (force reprocessing)
+                    processed_ids = set()
+                else:
+                    logger.info("🔍 Checking for existing results...")
+                    processed_ids = load_existing_results(args.output)
+                    if processed_ids:
+                        logger.info(f"📋 Found {len(processed_ids)} already processed instances")
                 
                 # Process instances with progressive output
                 results = evaluator.process_instances(instances, args.output, processed_ids)
