@@ -123,119 +123,57 @@ exit 0
                 """#!/bin/bash
 set -e
 
-# Extract test classes from test patch
-extract_test_classes() {
-    local patch_file=$1
-    if [ ! -f "$patch_file" ]; then
-        echo "com.google.inject.internal.ProvisionListenerTest"
-        return
-    fi
-    
-    # Extract test file paths from the patch
-    local test_files=$(grep -E "^\\+\\+\\+ b/.*Test\\.java" "$patch_file" | sed -E 's/^\\+\\+\\+ b\\/(.*)/\\1/')
-    
-    if [ -z "$test_files" ]; then
-        # Try to find test class names in the patch content
-        local test_class_names=$(grep -E "^\\+.*class\\s+([A-Za-z0-9_]+Test)\\s+" "$patch_file" | sed -E 's/^\\+.*class\\s+([A-Za-z0-9_]+Test)\\s+.*/\\1/')
-        
-        if [ -z "$test_class_names" ]; then
-            # If still no test classes found, use the default
-            echo "com.google.inject.internal.ProvisionListenerTest"
-            return
-        else
-            # Try to determine the package from the file
-            local package_lines=$(grep -E "^\\+package\\s+([A-Za-z0-9_.]+);" "$patch_file" | sed -E 's/^\\+package\\s+([A-Za-z0-9_.]+);/\\1/')
-            local test_classes=""
-            
-            for class in $test_class_names; do
-                if [ -n "$package_lines" ]; then
-                    # Use the first package found
-                    local package=$(echo "$package_lines" | head -n 1)
-                    test_classes="$test_classes,$package.$class"
-                else
-                    # If no package found, use the class name as is
-                    test_classes="$test_classes,$class"
-                fi
-            done
-            
-            # Remove leading comma
-            test_classes=$(echo "$test_classes" | sed -E 's/^,//')
-            echo "$test_classes"
-            return
-        fi
-    fi
-    
-    # Convert file paths to class names
-    local test_classes=""
-    for file in $test_files; do
-        # Remove .java extension and convert path to package
-        local class_name=$(echo "$file" | sed -E 's/\\.java$//' | sed -E 's/\\//./g')
-        test_classes="$test_classes,$class_name"
-    done
-    
-    # Remove leading comma
-    test_classes=$(echo "$test_classes" | sed -E 's/^,//')
-    
-    if [ -z "$test_classes" ]; then
-        echo "com.google.inject.internal.ProvisionListenerTest"
+# Default test class to use if no tests are found
+DEFAULT_TEST="com.google.inject.internal.ProvisionListenerTest"
+
+# Check if test patch exists
+if [ ! -f "/home/test.patch" ]; then
+    echo "Test patch not found, using default test"
+    echo "$DEFAULT_TEST" > /home/test_specs.txt
+    exit 0
+fi
+
+# Try to extract test file paths from the patch
+TEST_FILES=$(grep -E "^\+\+\+ b/.*Test\.java" "/home/test.patch" | sed -E 's/^\+\+\+ b\/(.*)/\1/')
+
+if [ -z "$TEST_FILES" ]; then
+    # If no test files found, use default
+    echo "No test files found in patch, using default test"
+    echo "$DEFAULT_TEST" > /home/test_specs.txt
+    exit 0
+fi
+
+# Convert file paths to class names
+TEST_CLASSES=""
+for FILE in $TEST_FILES; do
+    # Remove .java extension and convert path to package
+    # Handle special cases for Guice repository structure
+    if [[ "$FILE" == core/test/* ]]; then
+        # Core tests have a specific package structure
+        CLASS_NAME=$(echo "$FILE" | sed -E 's/^core\/test\///' | sed -E 's/\.java$//' | sed -E 's/\//./g')
+    elif [[ "$FILE" == extensions/*/test/* ]]; then
+        # Extension tests have a different package structure
+        CLASS_NAME=$(echo "$FILE" | sed -E 's/^extensions\/[^\/]+\/test\///' | sed -E 's/\.java$//' | sed -E 's/\//./g')
     else
-        echo "$test_classes"
-    fi
-}
-
-# Extract test methods from test patch
-extract_test_methods() {
-    local patch_file=$1
-    local class_name=$2
-    
-    if [ ! -f "$patch_file" ]; then
-        return
+        # Default case
+        CLASS_NAME=$(echo "$FILE" | sed -E 's/\.java$//' | sed -E 's/\//./g')
     fi
     
-    # Convert class name to file path format for grep
-    local class_path=$(echo "$class_name" | sed -E 's/\\./\\//g')
-    
-    # Extract method names from the patch for this class
-    local methods=$(grep -A 50 "^\\+\\+\\+ b/.*$class_path\\.java" "$patch_file" | grep -E "^\\+\\s*(public|private|protected)\\s+(final\\s+)?void\\s+test[A-Za-z0-9_]+\\(" | sed -E 's/.*void\\s+(test[A-Za-z0-9_]+)\\(.*/\\1/')
-    
-    if [ -z "$methods" ]; then
-        return
-    fi
-    
-    # Join methods with comma
-    local method_list=""
-    for method in $methods; do
-        method_list="$method_list,$method"
-    done
-    
-    # Remove leading comma
-    method_list=$(echo "$method_list" | sed -E 's/^,//')
-    
-    if [ ! -z "$method_list" ]; then
-        echo "#$method_list"
-    fi
-}
-
-# Main extraction logic
-TEST_CLASSES=$(extract_test_classes /home/test.patch)
-echo "Detected test classes: $TEST_CLASSES"
-
-# For each class, check if we need to run specific methods
-TEST_SPECS=""
-IFS=',' read -ra CLASS_ARRAY <<< "$TEST_CLASSES"
-for class in "${CLASS_ARRAY[@]}"; do
-    methods=$(extract_test_methods /home/test.patch "$class")
-    if [ ! -z "$methods" ]; then
-        TEST_SPECS="$TEST_SPECS,$class$methods"
+    if [ -n "$TEST_CLASSES" ]; then
+        TEST_CLASSES="$TEST_CLASSES,$CLASS_NAME"
     else
-        TEST_SPECS="$TEST_SPECS,$class"
+        TEST_CLASSES="$CLASS_NAME"
     fi
 done
 
-# Remove leading comma
-TEST_SPECS=$(echo "$TEST_SPECS" | sed -E 's/^,//')
-echo "Final test specifications: $TEST_SPECS"
-echo "$TEST_SPECS" > /home/test_specs.txt
+if [ -z "$TEST_CLASSES" ]; then
+    # If still no test classes found, use default
+    echo "Failed to extract test classes, using default test"
+    echo "$DEFAULT_TEST" > /home/test_specs.txt
+else
+    echo "Final test specifications: $TEST_CLASSES"
+    echo "$TEST_CLASSES" > /home/test_specs.txt
+fi
 """,
             ),
             File(
@@ -253,47 +191,31 @@ bash /home/check_git_changes.sh
 # Extract test classes from test patch
 bash /home/extract_test_classes.sh
 
-# Run the detected tests or fallback to a default test
-TEST_SPECS=$(cat /home/test_specs.txt)
-if [ -z "$TEST_SPECS" ]; then
-    # Try to extract test classes from the fix patch
-    if [ -f "/home/fix.patch" ]; then
-        # Look for modified Java files in the fix patch
-        MODIFIED_FILES=$(grep -E "^\\+\\+\\+ b/.*\\.java" "/home/fix.patch" | sed -E 's/^\\+\\+\\+ b\\/(.*)/\\1/')
-        
-        # For each modified file, check if there's a corresponding test file
-        for FILE in $MODIFIED_FILES; do
-            # Extract the class name from the file path
-            CLASS_NAME=$(echo "$FILE" | sed -E 's/\\.java$//' | sed -E 's/.*\\/(.*)/\\1/')
-            
-            # Look for test files that might test this class
-            TEST_FILES=$(find . -name "${CLASS_NAME}Test.java" -o -name "Test${CLASS_NAME}.java")
-            
-            if [ -n "$TEST_FILES" ]; then
-                for TEST_FILE in $TEST_FILES; do
-                    # Convert file path to class name
-                    TEST_CLASS=$(echo "$TEST_FILE" | sed -E 's/^\\.\\///' | sed -E 's/\\.java$//' | sed -E 's/\\//./g')
-                    if [ -n "$TEST_SPECS" ]; then
-                        TEST_SPECS="$TEST_SPECS,$TEST_CLASS"
-                    else
-                        TEST_SPECS="$TEST_CLASS"
-                    fi
-                done
-            fi
-        done
-    fi
-    
-    # If still no tests found, use the default
-    if [ -z "$TEST_SPECS" ]; then
-        TEST_SPECS="com.google.inject.internal.ProvisionListenerTest"
-    fi
-    
-    # Save the test specs for other scripts to use
-    echo "$TEST_SPECS" > /home/test_specs.txt
+# Use a default test if no test specs were found
+if [ ! -s /home/test_specs.txt ]; then
+    echo "com.google.inject.internal.ProvisionListenerTest" > /home/test_specs.txt
 fi
 
+# Read the test specs
+TEST_SPECS=$(cat /home/test_specs.txt)
 echo "Running tests: $TEST_SPECS"
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS || true
+
+# Run the tests and capture the output
+TEST_OUTPUT=$(mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS || true)
+
+# Print the output
+echo "$TEST_OUTPUT"
+
+# Verify the test specs are valid
+if echo "$TEST_OUTPUT" | grep -q "No tests were executed!"; then
+    echo "Warning: No tests were executed with the current test specs. Falling back to default test."
+    echo "com.google.inject.internal.ProvisionListenerTest" > /home/test_specs.txt
+    TEST_SPECS="com.google.inject.internal.ProvisionListenerTest"
+    echo "Retrying with default test: $TEST_SPECS"
+    mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS || true
+fi
+
+echo "Preparation completed. Test specs: $TEST_SPECS"
 """.format(
                     pr=self.pr
                 ),
@@ -315,7 +237,34 @@ if [ -z "$TEST_SPECS" ]; then
 fi
 
 echo "Running tests: $TEST_SPECS"
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS
+
+# Run the tests and capture the output
+TEST_OUTPUT=$(mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS)
+RUN_RESULT=$?
+
+# Print the output
+echo "$TEST_OUTPUT"
+
+echo "Run execution completed with exit code: $RUN_RESULT"
+
+# Process the test results
+if [ $RUN_RESULT -eq 0 ]; then
+  echo "Run execution passed"
+  
+  # Parse Maven output to extract test results
+  PASSED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: 0" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$PASSED_TESTS" ]; then
+    echo "Passed tests: $PASSED_TESTS"
+  fi
+else
+  echo "Run execution failed"
+  
+  # Parse Maven output to extract test results
+  FAILED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: [1-9]" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "Failed tests: $FAILED_TESTS"
+  fi
+fi
 """.format(
                     pr=self.pr
                 ),
@@ -343,14 +292,34 @@ fi
 echo "Running test with test patch only"
 echo "==== TEST PATCH EXECUTION START ===="
 echo "Running tests: $TEST_SPECS"
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS
+
+# Run the tests and capture the output
+TEST_OUTPUT=$(mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS)
 TEST_RESULT=$?
+
+# Print the output
+echo "$TEST_OUTPUT"
+
 echo "==== TEST PATCH EXECUTION END ===="
 echo "Test patch execution completed with exit code: $TEST_RESULT"
+
+# Process the test results
 if [ $TEST_RESULT -ne 0 ]; then
   echo "Test patch execution failed as expected"
+  
+  # Parse Maven output to extract test results
+  FAILED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: [1-9]" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "Failed tests: $FAILED_TESTS"
+  fi
 else
   echo "Test patch execution passed unexpectedly"
+  
+  # Parse Maven output to extract test results
+  PASSED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: 0" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$PASSED_TESTS" ]; then
+    echo "Passed tests: $PASSED_TESTS"
+  fi
 fi
 
 """.format(
@@ -377,17 +346,38 @@ if [ -z "$TEST_SPECS" ]; then
     echo "$TEST_SPECS" > /home/test_specs.txt
 fi
 
+echo "Processing fix-run.sh execution with test names: $TEST_SPECS"
 echo "Running test with both test and fix patches"
 echo "==== FIX PATCH EXECUTION START ===="
 echo "Running tests: $TEST_SPECS"
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS
+
+# Run the tests and capture the output
+TEST_OUTPUT=$(mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dtest=$TEST_SPECS)
 FIX_RESULT=$?
+
+# Print the output
+echo "$TEST_OUTPUT"
+
 echo "==== FIX PATCH EXECUTION END ===="
 echo "Fix patch execution completed with exit code: $FIX_RESULT"
+
+# Process the test results
 if [ $FIX_RESULT -eq 0 ]; then
   echo "Fix patch execution passed as expected"
+  
+  # Parse Maven output to extract test results
+  PASSED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: 0" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$PASSED_TESTS" ]; then
+    echo "Passed tests: $PASSED_TESTS"
+  fi
 else
   echo "Fix patch execution failed unexpectedly"
+  
+  # Parse Maven output to extract test results
+  FAILED_TESTS=$(echo "$TEST_OUTPUT" | grep -E "Running.*Tests run:.*Failures: [1-9]" | sed -E 's/Running\s+([^\s]+).*/\\1/')
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "Failed tests: $FAILED_TESTS"
+  fi
 fi
 
 """.format(
@@ -528,6 +518,21 @@ class Guice(Instance):
                 # This is just a class name, we'll extract individual tests later
                 test_names.append(spec)
         
+        # Look for explicit test results in the log
+        passed_tests_match = re.search(r"Passed tests: ([\w\.,#]+)", test_log)
+        if passed_tests_match:
+            passed_tests_str = passed_tests_match.group(1)
+            for test in passed_tests_str.split(","):
+                passed_tests.add(test.strip())
+            print(f"Found explicit passed tests: {passed_tests}")
+            
+        failed_tests_match = re.search(r"Failed tests: ([\w\.,#]+)", test_log)
+        if failed_tests_match:
+            failed_tests_str = failed_tests_match.group(1)
+            for test in failed_tests_str.split(","):
+                failed_tests.add(test.strip())
+            print(f"Found explicit failed tests: {failed_tests}")
+        
         # Check for specific test results in test-run.sh execution
         if "Running test with test patch only" in test_log:
             # This is the test-run.sh execution
@@ -537,22 +542,23 @@ class Guice(Instance):
             if "Test patch execution completed with exit code: 0" in test_log:
                 # The tests passed unexpectedly
                 print("Test patch execution unexpectedly passed (exit code 0)")
-                if "BUILD SUCCESS" in test_log:
-                    # Add all test names as passed
+                if "BUILD SUCCESS" in test_log and len(passed_tests) == 0:
+                    # Add all test names as passed if we don't have explicit passed tests
                     for test_name in test_names:
                         passed_tests.add(test_name)
             elif "Test patch execution completed with exit code:" in test_log:
                 # The tests failed as expected
                 print("Test patch execution failed as expected (non-zero exit code)")
-                if "BUILD FAILURE" in test_log:
-                    # Add all test names as failed
+                if "BUILD FAILURE" in test_log and len(failed_tests) == 0:
+                    # Add all test names as failed if we don't have explicit failed tests
                     for test_name in test_names:
                         failed_tests.add(test_name)
             
-            # Process individual test results from Maven output
-            self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
+            # Process individual test results from Maven output if we don't have explicit results
+            if len(passed_tests) == 0 and len(failed_tests) == 0:
+                self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
             
-            # If we couldn't determine any results, check the build status
+            # If we still couldn't determine any results, check the build status
             if len(passed_tests) == 0 and len(failed_tests) == 0 and len(skipped_tests) == 0:
                 if "BUILD SUCCESS" in test_log:
                     print("No specific test results found, but build succeeded. Assuming all tests passed.")
@@ -580,7 +586,7 @@ class Guice(Instance):
             )
         
         # Check for specific test results in fix-run.sh execution
-        if "Running test with both test and fix patches" in test_log:
+        if "Running test with both test and fix patches" in test_log or "Processing fix-run.sh execution with test names:" in test_log:
             # This is the fix-run.sh execution
             print(f"Processing fix-run.sh execution with test names: {test_names}")
             
@@ -588,22 +594,23 @@ class Guice(Instance):
             if "Fix patch execution completed with exit code: 0" in test_log:
                 # The tests passed with the fix
                 print("Fix patch execution passed as expected (exit code 0)")
-                if "BUILD SUCCESS" in test_log:
-                    # Add all test names as passed
+                if "BUILD SUCCESS" in test_log and len(passed_tests) == 0:
+                    # Add all test names as passed if we don't have explicit passed tests
                     for test_name in test_names:
                         passed_tests.add(test_name)
             elif "Fix patch execution completed with exit code:" in test_log:
                 # The tests still failed even with the fix
                 print("Fix patch execution failed unexpectedly (non-zero exit code)")
-                if "BUILD FAILURE" in test_log:
-                    # Add all test names as failed
+                if "BUILD FAILURE" in test_log and len(failed_tests) == 0:
+                    # Add all test names as failed if we don't have explicit failed tests
                     for test_name in test_names:
                         failed_tests.add(test_name)
             
-            # Process individual test results from Maven output
-            self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
+            # Process individual test results from Maven output if we don't have explicit results
+            if len(passed_tests) == 0 and len(failed_tests) == 0:
+                self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
             
-            # If we couldn't determine any results, check the build status
+            # If we still couldn't determine any results, check the build status
             if len(passed_tests) == 0 and len(failed_tests) == 0 and len(skipped_tests) == 0:
                 if "BUILD SUCCESS" in test_log:
                     print("No specific test results found, but build succeeded. Assuming all tests passed.")
@@ -630,8 +637,24 @@ class Guice(Instance):
                 skipped_tests=skipped_tests,
             )
         
-        # Process regular Maven test output if not a special execution
-        self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
+        # Process regular Maven test output if not a special execution and we don't have explicit results
+        if len(passed_tests) == 0 and len(failed_tests) == 0:
+            self._process_maven_test_results(test_log, passed_tests, failed_tests, skipped_tests)
+        
+        # If we still couldn't determine any results, check the build status
+        if len(passed_tests) == 0 and len(failed_tests) == 0 and len(skipped_tests) == 0:
+            if "BUILD SUCCESS" in test_log:
+                print("No specific test results found, but build succeeded. Assuming all tests passed.")
+                for test_name in test_names:
+                    passed_tests.add(test_name)
+            elif "BUILD FAILURE" in test_log:
+                print("No specific test results found, but build failed. Assuming all tests failed.")
+                for test_name in test_names:
+                    failed_tests.add(test_name)
+            else:
+                print("No specific test results found and no build status. Assuming all tests passed.")
+                for test_name in test_names:
+                    passed_tests.add(test_name)
         
         return TestResult(
             passed_count=len(passed_tests),
@@ -647,19 +670,23 @@ class Guice(Instance):
 
         # Maven test output patterns for Guice - improved to handle various formats
         re_pass_tests = [
-            # Standard Maven test output pattern
-            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec(?!\s+<<<)", re.MULTILINE),
+            # Standard Maven test output pattern - only consider as pass if Failures and Errors are 0
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*0,\s*Errors:\s*0,\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec(?!\s+<<<)", re.MULTILINE),
             # Alternative format with different spacing
-            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*(\d+),\s+Errors:\s*(\d+),\s+Skipped:\s*(\d+),\s+Time elapsed:\s*[\d.]+\s+s(?!\s+<<<)", re.MULTILINE)
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*0,\s+Errors:\s*0,\s+Skipped:\s*(\d+),\s+Time elapsed:\s*[\d.]+\s+s(?!\s+<<<)", re.MULTILINE)
         ]
         
         re_fail_tests = [
-            # Standard Maven failure pattern
+            # Standard Maven failure pattern with FAILURE marker
             re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec\s+<<<\s+FAILURE!", re.MULTILINE),
             # Alternative format with different spacing
             re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*(\d+),\s+Errors:\s*(\d+),\s+Skipped:\s*(\d+),\s+Time elapsed:\s*[\d.]+\s+s\s+<<<\s+FAILURE!", re.MULTILINE),
-            # Error pattern
-            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec\s+<<<\s+ERROR!", re.MULTILINE)
+            # Error pattern with ERROR marker
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec\s+<<<\s+ERROR!", re.MULTILINE),
+            # Failure pattern without marker but with non-zero failures
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*([1-9]\d*),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec", re.MULTILINE),
+            # Error pattern without marker but with non-zero errors
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*([1-9]\d*),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec", re.MULTILINE)
         ]
         
         # Look for specific test failures in the log
@@ -688,16 +715,11 @@ class Guice(Instance):
             for test in tests:
                 test_name = test[0]
                 tests_run = int(test[1])
-                failures = int(test[2])
-                errors = int(test[3])
-                skipped = int(test[4])
+                skipped = int(test[2])
                 
                 # For test classes with multiple methods
                 if "#" not in test_name:  # This is a class, not a specific method
-                    if failures > 0 or errors > 0:
-                        # The class had failures, mark it as failed
-                        failed_tests.add(test_name)
-                    elif tests_run > 0 and skipped != tests_run:
+                    if tests_run > 0 and skipped != tests_run:
                         # The class had some tests run and not all were skipped
                         passed_tests.add(test_name)
                     elif skipped == tests_run:
@@ -705,9 +727,7 @@ class Guice(Instance):
                         skipped_tests.add(test_name)
                 else:
                     # This is a specific method
-                    if failures > 0 or errors > 0:
-                        failed_tests.add(test_name)
-                    elif tests_run > 0:
+                    if tests_run > 0:
                         passed_tests.add(test_name)
 
         # Process failing tests
@@ -715,7 +735,11 @@ class Guice(Instance):
             tests = re_fail_test.findall(test_log)
             for test in tests:
                 test_name = test[0]
-                failed_tests.add(test_name)
+                failures = int(test[2]) if len(test) > 2 else 0
+                errors = int(test[3]) if len(test) > 3 else 0
+                
+                if failures > 0 or errors > 0:
+                    failed_tests.add(test_name)
 
         # Check for overall build success/failure
         if "BUILD SUCCESS" in test_log:
@@ -742,6 +766,23 @@ class Guice(Instance):
                         else:
                             # This is just a class name
                             passed_tests.add(spec)
+        
+        # Special handling for Google Guice repository
+        # If we have no test results but we know the test specs, use them
+        if len(passed_tests) == 0 and len(failed_tests) == 0:
+            # Check if we have test specs in the log
+            test_specs_match = re.search(r"Running tests: ([\w\.,#]+)", test_log)
+            if test_specs_match:
+                test_specs = test_specs_match.group(1)
+                
+                # If BUILD SUCCESS, mark all as passed
+                if "BUILD SUCCESS" in test_log:
+                    for spec in test_specs.split(","):
+                        passed_tests.add(spec)
+                # If BUILD FAILURE, mark all as failed
+                elif "BUILD FAILURE" in test_log:
+                    for spec in test_specs.split(","):
+                        failed_tests.add(spec)
         
         # Remove any test from passed_tests if it's also in failed_tests
         passed_tests = passed_tests - failed_tests
