@@ -153,7 +153,9 @@ for FILE in $TEST_FILES; do
         CLASS_NAME=$(echo "$FILE" | sed -E 's/^core\/test\///' | sed -E 's/\.java$//' | sed -E 's/\//./g')
     elif [[ "$FILE" == extensions/*/test/* ]]; then
         # Extension tests have a different package structure
-        CLASS_NAME=$(echo "$FILE" | sed -E 's/^extensions\/[^\/]+\/test\///' | sed -E 's/\.java$//' | sed -E 's/\//./g')
+        MODULE_NAME=$(echo "$FILE" | sed -E 's/^extensions\/([^\/]+)\/test\/.*/\1/')
+        CLASS_PATH=$(echo "$FILE" | sed -E 's/^extensions\/[^\/]+\/test\///' | sed -E 's/\.java$//' | sed -E 's/\//./g')
+        CLASS_NAME="$CLASS_PATH"
     else
         # Default case
         CLASS_NAME=$(echo "$FILE" | sed -E 's/\.java$//' | sed -E 's/\//./g')
@@ -509,6 +511,10 @@ class Guice(Instance):
         # Parse test specs into individual test names
         test_names = []
         for spec in test_specs.split(","):
+            spec = spec.strip()
+            if not spec:
+                continue
+                
             if "#" in spec:
                 # This is a class with specific methods
                 class_name, methods = spec.split("#", 1)
@@ -673,7 +679,9 @@ class Guice(Instance):
             # Standard Maven test output pattern - only consider as pass if Failures and Errors are 0
             re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*0,\s*Errors:\s*0,\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec(?!\s+<<<)", re.MULTILINE),
             # Alternative format with different spacing
-            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*0,\s+Errors:\s*0,\s+Skipped:\s*(\d+),\s+Time elapsed:\s*[\d.]+\s+s(?!\s+<<<)", re.MULTILINE)
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*0,\s+Errors:\s*0,\s+Skipped:\s*(\d+),\s+Time elapsed:\s*[\d.]+\s+s(?!\s+<<<)", re.MULTILINE),
+            # Additional pattern for Guice tests
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*0,\s+Errors:\s*0,\s+Skipped:\s*(\d+)", re.MULTILINE)
         ]
         
         re_fail_tests = [
@@ -686,25 +694,57 @@ class Guice(Instance):
             # Failure pattern without marker but with non-zero failures
             re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*([1-9]\d*),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec", re.MULTILINE),
             # Error pattern without marker but with non-zero errors
-            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*([1-9]\d*),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec", re.MULTILINE)
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*([1-9]\d*),\s*Skipped:\s*(\d+),\s*Time elapsed:\s*[\d.]+\s*sec", re.MULTILINE),
+            # Additional pattern for Guice tests with failures
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*([1-9]\d*),\s+Errors:\s*(\d+),\s+Skipped:\s*(\d+)", re.MULTILINE),
+            # Additional pattern for Guice tests with errors
+            re.compile(r"Running\s+(.+?)\s*\n(?:(?!Tests run:).*\n)*Tests run:\s*(\d+),\s+Failures:\s*(\d+),\s+Errors:\s*([1-9]\d*),\s+Skipped:\s*(\d+)", re.MULTILINE)
         ]
         
         # Look for specific test failures in the log
-        test_failure_pattern = re.compile(r"^Tests run:.*Failures: (\d+), Errors: (\d+).*$", re.MULTILINE)
-        test_failure_match = test_failure_pattern.search(test_log)
+        test_failure_patterns = [
+            re.compile(r"^Tests run:.*Failures: (\d+), Errors: (\d+).*$", re.MULTILINE),
+            re.compile(r"^Tests run:.*Failures: (\d+),.*Errors: (\d+).*$", re.MULTILINE),
+            re.compile(r"Tests run: \d+, Failures: (\d+), Errors: (\d+)", re.MULTILINE)
+        ]
+        
+        test_failure_match = None
+        for pattern in test_failure_patterns:
+            match = pattern.search(test_log)
+            if match:
+                test_failure_match = match
+                break
         
         # Check for specific test method failures
-        method_failure_pattern = re.compile(r"testcase.*name=\"([^\"]+)\".*time=\"[\d.]+\">\s*<failure", re.MULTILINE)
-        method_failures = method_failure_pattern.findall(test_log)
+        method_failure_patterns = [
+            re.compile(r"testcase.*name=\"([^\"]+)\".*time=\"[\d.]+\">\s*<failure", re.MULTILINE),
+            re.compile(r"testcase.*name=\"([^\"]+)\".*>\s*<failure", re.MULTILINE),
+            re.compile(r"Failed tests:.*\n((?:.*\n)*?)(?:Tests run:|$)", re.MULTILINE)
+        ]
+        
+        method_failures = []
+        for pattern in method_failure_patterns:
+            failures = pattern.findall(test_log)
+            if failures:
+                if isinstance(failures[0], tuple):
+                    method_failures.extend([f[0] for f in failures])
+                else:
+                    method_failures.extend(failures)
         
         # Add specific method failures to failed_tests
         for method in method_failures:
+            method = method.strip()
+            if not method:
+                continue
+                
             # Extract class name from the method name (assuming format: className.methodName)
             parts = method.split(".")
             if len(parts) >= 2:
                 class_name = ".".join(parts[:-1])
                 method_name = parts[-1]
                 failed_tests.add(f"{class_name}#{method_name}")
+                # Also add the class name itself as a fallback
+                failed_tests.add(class_name)
             else:
                 # If we can't parse it properly, just add the whole thing
                 failed_tests.add(method)
@@ -778,11 +818,27 @@ class Guice(Instance):
                 # If BUILD SUCCESS, mark all as passed
                 if "BUILD SUCCESS" in test_log:
                     for spec in test_specs.split(","):
-                        passed_tests.add(spec)
+                        spec = spec.strip()
+                        if spec:
+                            passed_tests.add(spec)
                 # If BUILD FAILURE, mark all as failed
                 elif "BUILD FAILURE" in test_log:
                     for spec in test_specs.split(","):
-                        failed_tests.add(spec)
+                        spec = spec.strip()
+                        if spec:
+                            failed_tests.add(spec)
+                # If we can't determine the build status, check for specific error messages
+                else:
+                    if "ERROR" in test_log or "FAILURE" in test_log or "Failed to execute goal" in test_log:
+                        for spec in test_specs.split(","):
+                            spec = spec.strip()
+                            if spec:
+                                failed_tests.add(spec)
+                    else:
+                        for spec in test_specs.split(","):
+                            spec = spec.strip()
+                            if spec:
+                                passed_tests.add(spec)
         
         # Remove any test from passed_tests if it's also in failed_tests
         passed_tests = passed_tests - failed_tests
