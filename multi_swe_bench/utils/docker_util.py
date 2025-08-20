@@ -74,6 +74,7 @@ def run(
     output_path: Optional[Path] = None,
     global_env: Optional[list[str]] = None,
     volumes: Optional[Union[dict[str, str], list[str]]] = None,
+    timeout: Optional[int] = None,
 ) -> str:
     container = None
     try:
@@ -89,15 +90,30 @@ def run(
         )
 
         output = ""
-        if output_path:
-            with open(output_path, "w", encoding="utf-8") as f:
-                for line in container.logs(stream=True, follow=True):
-                    line_decoded = line.decode("utf-8")
-                    f.write(line_decoded)
-                    output += line_decoded
-        else:
-            container.wait()
-            output = container.logs().decode("utf-8")
+        try:
+            if output_path:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    # Wait for container with timeout
+                    result = container.wait(timeout=timeout)
+                    # Get logs after completion
+                    output = container.logs().decode("utf-8")
+                    f.write(output)
+            else:
+                # Wait for container with timeout
+                result = container.wait(timeout=timeout)
+                output = container.logs().decode("utf-8")
+        except Exception as e:
+            # Handle timeout or other errors
+            if "timeout" in str(e).lower() or "timed out" in str(e).lower() or isinstance(e, TimeoutError):
+                # Kill the container if it's still running
+                try:
+                    container.kill()
+                    logging.getLogger(__name__).warning(f"Container killed due to timeout ({timeout}s): {image_full_name}")
+                except:
+                    pass
+                raise TimeoutError(f"Container execution timed out after {timeout} seconds")
+            else:
+                raise e
 
         return output
     finally:

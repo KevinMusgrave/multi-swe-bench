@@ -16,10 +16,15 @@ import json
 import logging
 import tempfile
 import time
+import sys
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from multi_swe_bench.harness.dataset import Dataset
 from multi_swe_bench.harness.image import Config
@@ -35,6 +40,7 @@ import multi_swe_bench.harness.repos.java.google.gson
 import multi_swe_bench.harness.repos.java.google.guava
 import multi_swe_bench.harness.repos.java.google.guice
 import multi_swe_bench.harness.repos.java.seleniumhq.selenium
+import multi_swe_bench.harness.repos.java.test.repo
 
 
 class TestEvaluator:
@@ -66,6 +72,10 @@ class TestEvaluator:
         if self.registry:
             return f"{self.registry}/{org}_m_{repo}:pr-{number}".lower()
         else:
+            # Check if the image exists with mswebench prefix first
+            mswebench_name = f"mswebench/{org}_m_{repo}:pr-{number}".lower()
+            if docker_util.exists(mswebench_name):
+                return mswebench_name
             return f"{org}_m_{repo}:pr-{number}".lower()
     
     def check_image_exists(self, image_name: str) -> bool:
@@ -104,7 +114,8 @@ class TestEvaluator:
             output = docker_util.run(
                 image_full_name=image_name,
                 run_command=command,
-                output_path=log_file
+                output_path=log_file,
+                timeout=self.timeout
             )
             
             # Parse the log output using instance's parser
@@ -115,6 +126,17 @@ class TestEvaluator:
             
             return test_result
             
+        except TimeoutError as e:
+            self.logger.error(f"⏰ {phase} phase timed out after {self.timeout}s: {str(e)}")
+            # Return empty test result on timeout
+            return TestResult(
+                passed_count=0,
+                failed_count=0,
+                skipped_count=0,
+                passed_tests=set(),
+                failed_tests=set(),
+                skipped_tests=set()
+            )
         except Exception as e:
             self.logger.error(f"❌ {phase} phase failed: {str(e)}")
             # Return empty test result on failure
@@ -624,6 +646,18 @@ Features:
         help="Force reprocessing of instances in current input file, preserving results for other instances"
     )
     
+    parser.add_argument(
+        "--path-to-dataset",
+        type=Path,
+        help="Path to dataset (optional)"
+    )
+
+    parser.add_argument(
+        "--path-to-dataset-with-tests",
+        type=Path,
+        help="Path to dataset with tests (optional)"
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
@@ -631,8 +665,15 @@ Features:
     
     # Validate input file
     if not args.input.exists():
-        logger.error(f"Input file not found: {args.input}")
-        return 1
+        # Try to find the file in the parent directory
+        parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.input))
+        if parent_path.exists():
+            logger.info(f"Found input file at: {parent_path}")
+            args.input = parent_path
+        else:
+            logger.error(f"Input file not found: {args.input}")
+            logger.error(f"Also checked: {parent_path}")
+            return 1
     
     # Create output directory if needed
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -640,6 +681,34 @@ Features:
     logger.info(f"🚀 Starting test and evaluation process")
     logger.info(f"📁 Input: {args.input}")
     logger.info(f"📁 Output: {args.output}")
+    
+    if args.path_to_dataset:
+        logger.info(f"📁 Dataset: {args.path_to_dataset}")
+        # Validate dataset file
+        if not args.path_to_dataset.exists():
+            # Try to find the file in the parent directory
+            parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.path_to_dataset))
+            if parent_path.exists():
+                logger.info(f"Found dataset at: {parent_path}")
+                args.path_to_dataset = parent_path
+            else:
+                logger.error(f"Dataset file not found: {args.path_to_dataset}")
+                logger.error(f"Also checked: {parent_path}")
+                return 1
+    
+    if args.path_to_dataset_with_tests:
+        logger.info(f"📁 Dataset with tests: {args.path_to_dataset_with_tests}")
+        # Validate dataset with tests file
+        if not args.path_to_dataset_with_tests.exists():
+            # Try to find the file in the parent directory
+            parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.path_to_dataset_with_tests))
+            if parent_path.exists():
+                logger.info(f"Found dataset with tests at: {parent_path}")
+                args.path_to_dataset_with_tests = parent_path
+            else:
+                logger.error(f"Dataset with tests file not found: {args.path_to_dataset_with_tests}")
+                logger.error(f"Also checked: {parent_path}")
+                return 1
     logger.info(f"🐳 Registry: {args.registry or 'default'}")
     logger.info(f"👥 Workers: {args.max_workers}")
     logger.info(f"⏱️  Timeout: {args.timeout}s")
@@ -651,6 +720,22 @@ Features:
         logger.info("📖 Loading instances...")
         instances = load_instances(args.input)
         logger.info(f"✅ Loaded {len(instances)} instances")
+        
+        # Load dataset with tests if provided
+        if args.path_to_dataset_with_tests:
+            logger.info("📖 Loading dataset with tests...")
+            test_instances = load_instances(args.path_to_dataset_with_tests)
+            logger.info(f"✅ Loaded {len(test_instances)} test instances")
+            
+            # Merge test data into instances
+            for instance in instances:
+                instance_id = instance.get('instance_id')
+                for test_instance in test_instances:
+                    if test_instance.get('instance_id') == instance_id:
+                        # Merge test data
+                        if 'test_patch' in test_instance:
+                            instance['test_patch'] = test_instance['test_patch']
+                        logger.info(f"✅ Added test data for instance {instance_id}")
         
         # Apply limit if specified
         if args.limit:
