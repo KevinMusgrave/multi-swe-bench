@@ -21,7 +21,7 @@ class CheckstyleImageBase(Image):
         return self._config
 
     def dependency(self) -> Union[str, "Image"]:
-        return "ubuntu:22.04"
+        return "ubuntu:24.04"
 
     def image_tag(self) -> str:
         return "base"
@@ -50,7 +50,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 WORKDIR /home/
-RUN apt-get update && apt-get install -y git openjdk-11-jdk maven
+RUN apt-get update && apt-get install -y git openjdk-21-jdk maven
 
 {code}
 
