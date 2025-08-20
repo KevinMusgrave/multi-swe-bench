@@ -132,7 +132,11 @@ class TestEvaluator:
             return test_result
             
         except TimeoutError as e:
-            self.logger.error(f"⏰ {phase} phase timed out after {self.timeout}s: {str(e)}")
+            self.logger.error(f"⏰ {phase} phase timed out after {self.timeout}s for {instance.pr.org}/{instance.pr.repo}#{instance.pr.number}")
+            self.logger.error(f"Docker image: {image_name}")
+            self.logger.error(f"Command: {command}")
+            self.logger.error(f"Timeout details: {str(e)}")
+            
             # Return empty test result on timeout
             return TestResult(
                 passed_count=0,
@@ -142,8 +146,29 @@ class TestEvaluator:
                 failed_tests=set(),
                 skipped_tests=set()
             )
+        except RuntimeError as e:
+            # RuntimeError is raised by enhanced docker_util.run for container failures
+            self.logger.error(f"❌ {phase} phase container failed for {instance.pr.org}/{instance.pr.repo}#{instance.pr.number}")
+            self.logger.error(f"Docker image: {image_name}")
+            self.logger.error(f"Command: {command}")
+            self.logger.error(f"Container failure details:\n{str(e)}")
+            
+            # Return empty test result on container failure
+            return TestResult(
+                passed_count=0,
+                failed_count=0,
+                skipped_count=0,
+                passed_tests=set(),
+                failed_tests=set(),
+                skipped_tests=set()
+            )
         except Exception as e:
-            self.logger.error(f"❌ {phase} phase failed: {str(e)}")
+            self.logger.error(f"❌ {phase} phase failed for {instance.pr.org}/{instance.pr.repo}#{instance.pr.number}")
+            self.logger.error(f"Docker image: {image_name}")
+            self.logger.error(f"Command: {command}")
+            self.logger.error(f"Error details: {str(e)}")
+            self.logger.error(f"Error type: {type(e).__name__}")
+            
             # Return empty test result on failure
             return TestResult(
                 passed_count=0,
@@ -308,7 +333,12 @@ class TestEvaluator:
             
         except Exception as e:
             self.logger.error(f"❌ Error processing {org}/{repo}#{number}: {str(e)}")
-            return self._create_error_result(instance_data, str(e))
+            self.logger.error(f"Error type: {type(e).__name__}")
+            self.logger.error(f"Docker image: {image_name}")
+            
+            # Create detailed error message
+            detailed_error = f"Processing failed: {str(e)}\nError type: {type(e).__name__}\nDocker image: {image_name}"
+            return self._create_error_result(instance_data, detailed_error)
     
     def _create_error_result(self, instance_data: dict, error_msg: str) -> dict:
         """Create an error result for a failed instance."""
@@ -409,7 +439,12 @@ class TestEvaluator:
                         self.logger.info(f"💾 Saved result for {instance.get('instance_id', 'unknown')} ({completed}/{total})")
                     except Exception as e:
                         self.logger.error(f"❌ Exception processing instance: {e}")
-                        error_result = self._create_error_result(instance, str(e))
+                        self.logger.error(f"Exception type: {type(e).__name__}")
+                        self.logger.error(f"Instance: {instance.get('instance_id', 'unknown')}")
+                        
+                        # Create detailed error message
+                        detailed_error = f"Processing exception: {str(e)}\nException type: {type(e).__name__}"
+                        error_result = self._create_error_result(instance, detailed_error)
                         results.append(error_result)
                         # Save error result too
                         append_result(error_result, output_file)
@@ -449,7 +484,12 @@ class TestEvaluator:
                         results.append(result)
                     except Exception as e:
                         self.logger.error(f"❌ Exception processing instance: {e}")
-                        error_result = self._create_error_result(instance, str(e))
+                        self.logger.error(f"Exception type: {type(e).__name__}")
+                        self.logger.error(f"Instance: {instance.get('instance_id', 'unknown')}")
+                        
+                        # Create detailed error message
+                        detailed_error = f"Processing exception: {str(e)}\nException type: {type(e).__name__}"
+                        error_result = self._create_error_result(instance, detailed_error)
                         results.append(error_result)
         
         return results

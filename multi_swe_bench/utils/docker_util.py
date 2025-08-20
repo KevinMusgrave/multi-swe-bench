@@ -140,6 +140,8 @@ def run(
     timeout: Optional[int] = None,
 ) -> str:
     container = None
+    logger = logging.getLogger(__name__)
+    
     try:
         container = docker_client.containers.run(
             image=image_full_name,
@@ -153,30 +155,66 @@ def run(
         )
 
         output = ""
+        exit_code = None
+        
         try:
             if output_path:
                 with open(output_path, "w", encoding="utf-8") as f:
                     # Wait for container with timeout
                     result = container.wait(timeout=timeout)
+                    exit_code = result['StatusCode']
+                    
                     # Get logs after completion
                     output = container.logs().decode("utf-8")
                     f.write(output)
             else:
                 # Wait for container with timeout
                 result = container.wait(timeout=timeout)
+                exit_code = result['StatusCode']
                 output = container.logs().decode("utf-8")
+                
+            # Check if container failed (non-zero exit code)
+            if exit_code != 0:
+                error_msg = f"Container failed with exit code {exit_code}"
+                logger.error(f"❌ {error_msg} for image {image_full_name}")
+                logger.error(f"Command: {run_command}")
+                logger.error(f"Container logs:\n{output}")
+                
+                # Create a detailed error that includes all failure information
+                detailed_error = f"{error_msg}\nImage: {image_full_name}\nCommand: {run_command}\nLogs:\n{output}"
+                raise RuntimeError(detailed_error)
+                
         except Exception as e:
             # Handle timeout or other errors
             if "timeout" in str(e).lower() or "timed out" in str(e).lower() or isinstance(e, TimeoutError):
+                # Get logs before killing container
+                try:
+                    partial_output = container.logs().decode("utf-8")
+                    logger.warning(f"Container logs before timeout:\n{partial_output}")
+                except:
+                    partial_output = "Could not retrieve logs"
+                
                 # Kill the container if it's still running
                 try:
                     container.kill()
-                    logging.getLogger(__name__).warning(f"Container killed due to timeout ({timeout}s): {image_full_name}")
+                    logger.warning(f"Container killed due to timeout ({timeout}s): {image_full_name}")
                 except:
                     pass
-                raise TimeoutError(f"Container execution timed out after {timeout} seconds")
+                    
+                detailed_timeout_error = f"Container execution timed out after {timeout} seconds\nImage: {image_full_name}\nCommand: {run_command}\nPartial logs:\n{partial_output}"
+                raise TimeoutError(detailed_timeout_error)
             else:
-                raise e
+                # For other exceptions, try to get container logs for debugging
+                try:
+                    error_logs = container.logs().decode("utf-8")
+                    logger.error(f"Container logs during error:\n{error_logs}")
+                    
+                    # Enhance the original exception with container details
+                    detailed_error = f"Container execution failed: {str(e)}\nImage: {image_full_name}\nCommand: {run_command}\nLogs:\n{error_logs}"
+                    raise RuntimeError(detailed_error) from e
+                except:
+                    # If we can't get logs, just re-raise the original exception
+                    raise e
 
         return output
     finally:

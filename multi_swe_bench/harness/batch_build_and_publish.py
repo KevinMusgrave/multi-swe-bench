@@ -216,9 +216,12 @@ class DockerImageBuilder:
                 if not self.check_image_exists_locally(local_image):
                     error_msg = f"Build reported success but image {local_image} does not exist locally"
                     logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                    logger.debug(f"Build stdout: {result.stdout}")
-                    logger.debug(f"Build stderr: {result.stderr}")
-                    return False, error_msg
+                    logger.error(f"Build stdout: {result.stdout}")
+                    logger.error(f"Build stderr: {result.stderr}")
+                    
+                    # Create detailed error message for upstream logging
+                    detailed_error = f"{error_msg}\nCommand: {' '.join(cmd)}\nStdout:\n{result.stdout}\nStderr:\n{result.stderr}"
+                    return False, detailed_error
                 
                 if local_image != full_image_name:
                     tag_result = subprocess.run(
@@ -230,38 +233,66 @@ class DockerImageBuilder:
                     if tag_result.returncode != 0:
                         error_msg = f"Failed to tag image: {tag_result.stderr}"
                         logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                        return False, error_msg
+                        logger.error(f"Tag command stdout: {tag_result.stdout}")
+                        
+                        # Create detailed error message for upstream logging
+                        detailed_error = f"{error_msg}\nTag command: docker tag {local_image} {full_image_name}\nStdout:\n{tag_result.stdout}\nStderr:\n{tag_result.stderr}"
+                        return False, detailed_error
                 
                 logger.info(f"✅ {instance.instance_id}: Build successful")
                 return True, f"Build successful: {full_image_name}"
             else:
-                error_msg = f"Build failed: {result.stderr}"
+                # Enhanced error logging for build failures
+                error_msg = f"Build failed with exit code {result.returncode}"
                 logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                return False, error_msg
+                logger.error(f"Build command: {' '.join(cmd)}")
+                logger.error(f"Build stdout:\n{result.stdout}")
+                logger.error(f"Build stderr:\n{result.stderr}")
                 
-        except subprocess.TimeoutExpired:
+                # Create detailed error message for upstream logging
+                detailed_error = f"{error_msg}\nCommand: {' '.join(cmd)}\nStdout:\n{result.stdout}\nStderr:\n{result.stderr}"
+                return False, detailed_error
+                
+        except subprocess.TimeoutExpired as e:
             error_msg = "Build timed out after 30 minutes"
             logger.error(f"❌ {instance.instance_id}: {error_msg}")
-            return False, error_msg
+            logger.error(f"Build command: {' '.join(cmd)}")
+            
+            # Try to get partial output if available
+            partial_stdout = getattr(e, 'stdout', '') or ''
+            partial_stderr = getattr(e, 'stderr', '') or ''
+            if partial_stdout or partial_stderr:
+                logger.error(f"Partial stdout:\n{partial_stdout}")
+                logger.error(f"Partial stderr:\n{partial_stderr}")
+            
+            # Create detailed error message for upstream logging
+            detailed_error = f"{error_msg}\nCommand: {' '.join(cmd)}\nPartial stdout:\n{partial_stdout}\nPartial stderr:\n{partial_stderr}"
+            return False, detailed_error
         except Exception as e:
             error_msg = f"Build error: {str(e)}"
             logger.error(f"❌ {instance.instance_id}: {error_msg}")
-            return False, error_msg
+            logger.error(f"Build command: {' '.join(cmd)}")
+            
+            # Create detailed error message for upstream logging
+            detailed_error = f"{error_msg}\nCommand: {' '.join(cmd)}\nException: {str(e)}"
+            return False, detailed_error
         finally:
             # Clean up temp file
             if temp_dataset.exists():
                 temp_dataset.unlink()
     
-    async def push_single_image(self, instance: Instance, max_retries: int = 3) -> Tuple[bool, str]:
+    async def push_single_image(self, instance: Instance, max_retries: int = 3, force_push: bool = False) -> Tuple[bool, str]:
         """Push a single Docker image with retry logic"""
         full_image_name = self.get_full_image_name(instance)
         
         logger.info(f"🚀 Pushing image for {instance.instance_id}")
         
-        # Check if image exists remotely
-        if self.check_image_exists_remotely(full_image_name):
+        # Check if image exists remotely (skip check if force_push is True)
+        if not force_push and self.check_image_exists_remotely(full_image_name):
             logger.info(f"⏭️  Image {full_image_name} already exists remotely, skipping push")
             return True, f"Image already exists remotely: {full_image_name}"
+        elif force_push:
+            logger.info(f"🔄 Force push enabled - pushing {full_image_name} even if it exists remotely")
         
         push_cmd = f"docker push {full_image_name}"
         
@@ -281,33 +312,46 @@ class DockerImageBuilder:
                     logger.info(f"✅ {instance.instance_id}: Push successful")
                     return True, f"Push successful: {full_image_name}"
                 else:
-                    logger.warning(f"⚠️  {instance.instance_id}: Push attempt {attempt + 1} failed: {result.stderr}")
+                    logger.warning(f"⚠️  {instance.instance_id}: Push attempt {attempt + 1} failed with exit code {result.returncode}")
+                    logger.warning(f"Push stdout:\n{result.stdout}")
+                    logger.warning(f"Push stderr:\n{result.stderr}")
                     if attempt < max_retries - 1:
                         logger.info(f"🔄 {instance.instance_id}: Retrying in 30 seconds...")
                         await asyncio.sleep(30)
                     else:
-                        error_msg = f"All {max_retries} push attempts failed: {result.stderr}"
+                        error_msg = f"All {max_retries} push attempts failed with exit code {result.returncode}"
                         logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                        return False, error_msg
                         
-            except subprocess.TimeoutExpired:
-                logger.warning(f"⏰ {instance.instance_id}: Push attempt {attempt + 1} timed out")
+                        # Create detailed error message for upstream logging
+                        detailed_error = f"{error_msg}\nCommand: {push_cmd}\nFinal stdout:\n{result.stdout}\nFinal stderr:\n{result.stderr}"
+                        return False, detailed_error
+                        
+            except subprocess.TimeoutExpired as e:
+                logger.warning(f"⏰ {instance.instance_id}: Push attempt {attempt + 1} timed out after 10 minutes")
+                logger.warning(f"Push command: {push_cmd}")
                 if attempt < max_retries - 1:
                     logger.info(f"🔄 {instance.instance_id}: Retrying in 30 seconds...")
                     await asyncio.sleep(30)
                 else:
-                    error_msg = f"All push attempts timed out"
+                    error_msg = f"All push attempts timed out after 10 minutes each"
                     logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                    return False, error_msg
+                    
+                    # Create detailed error message for upstream logging
+                    detailed_error = f"{error_msg}\nCommand: {push_cmd}\nTimeout: 10 minutes per attempt"
+                    return False, detailed_error
             except Exception as e:
                 logger.warning(f"⚠️  {instance.instance_id}: Push attempt {attempt + 1} failed: {e}")
+                logger.warning(f"Push command: {push_cmd}")
                 if attempt < max_retries - 1:
                     logger.info(f"🔄 {instance.instance_id}: Retrying in 30 seconds...")
                     await asyncio.sleep(30)
                 else:
                     error_msg = f"All push attempts failed: {str(e)}"
                     logger.error(f"❌ {instance.instance_id}: {error_msg}")
-                    return False, error_msg
+                    
+                    # Create detailed error message for upstream logging
+                    detailed_error = f"{error_msg}\nCommand: {push_cmd}\nException: {str(e)}"
+                    return False, detailed_error
         
         return False, "Unknown push error"
     
@@ -341,7 +385,7 @@ class DockerImageBuilder:
         
         return results
     
-    async def push_images(self, instances: List[Instance]) -> Dict[str, Tuple[bool, str]]:
+    async def push_images(self, instances: List[Instance], force_push: bool = False) -> Dict[str, Tuple[bool, str]]:
         """Push all images asynchronously"""
         logger.info(f"🚀 Pushing {len(instances)} images")
         
@@ -350,7 +394,7 @@ class DockerImageBuilder:
         
         async def push_with_semaphore(instance):
             async with semaphore:
-                return await self.push_single_image(instance)
+                return await self.push_single_image(instance, force_push=force_push)
         
         # Create tasks for all pushes
         tasks = [push_with_semaphore(instance) for instance in instances]
@@ -645,7 +689,7 @@ Examples:
     
     push_results = None
     if args.push and successful_instances:
-        push_results = asyncio.run(builder.push_images(successful_instances))
+        push_results = asyncio.run(builder.push_images(successful_instances, force_push=args.force_build))
     
     # Update image lists
     if args.update_lists and successful_instances:
