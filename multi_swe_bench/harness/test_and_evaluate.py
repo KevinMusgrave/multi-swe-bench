@@ -8,6 +8,14 @@ test results with transition categorizations (f2p, p2p, s2p, n2p).
 
 Usage:
     python test_and_evaluate.py --input instances.jsonl --output results.jsonl [options]
+
+Note:
+    Special handling has been added for certain PRs (1617, 1605, 1631) that require
+    longer timeouts for the fix_patch phase. These PRs will use a 30-minute timeout
+    instead of the default timeout specified by the --timeout parameter.
+    
+    Additionally, all PRs from the alibaba/Sentinel repository will use a 30-minute
+    timeout for all phases to ensure tests have enough time to complete.
 """
 
 import argparse
@@ -16,10 +24,15 @@ import json
 import logging
 import tempfile
 import time
+import sys
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from multi_swe_bench.harness.dataset import Dataset
 from multi_swe_bench.harness.image import Config
@@ -28,11 +41,6 @@ from multi_swe_bench.harness.pull_request import PullRequest
 from multi_swe_bench.harness.report import generate_report
 from multi_swe_bench.harness.test_result import Test, TestResult, TestStatus
 from multi_swe_bench.utils import docker_util
-
-# Import repository classes to register them
-import multi_swe_bench.harness.repos.java.google.gson
-import multi_swe_bench.harness.repos.java.vaadin.flow
-
 
 class TestEvaluator:
     """Handles test execution and evaluation for Multi-SWE-bench instances."""
@@ -48,8 +56,18 @@ class TestEvaluator:
         self.logger.info(f"Using temp directory: {self.temp_dir}")
     
     def cleanup(self):
-        """Clean up temporary files."""
+        """Clean up temporary files and orphaned Docker containers."""
         import shutil
+        
+        # Clean up orphaned containers
+        try:
+            cleaned_count = docker_util.cleanup_orphaned_containers(max_age_hours=0.8)
+            if cleaned_count > 0:
+                self.logger.info(f"Cleaned up {cleaned_count} orphaned Docker containers")
+        except Exception as e:
+            self.logger.warning(f"Failed to clean up orphaned containers: {e}")
+        
+        # Clean up temp directory
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
             self.logger.info(f"Cleaned up temp directory: {self.temp_dir}")
@@ -60,10 +78,7 @@ class TestEvaluator:
         repo = instance_data['repo']
         number = instance_data['number']
         
-        if self.registry:
-            return f"{self.registry}/{org}_m_{repo}:pr-{number}"
-        else:
-            return f"{org}_m_{repo}:pr-{number}"
+        return f"{self.registry}/{org}_m_{repo}:pr-{number}".lower()
     
     def check_image_exists(self, image_name: str) -> bool:
         """Check if Docker image exists locally."""
@@ -96,12 +111,16 @@ class TestEvaluator:
         # Create log file for this phase
         log_file = self.temp_dir / f"{instance.pr.org}_{instance.pr.repo}_{instance.pr.number}_{phase}.log"
         
+        #timeout should always be under 1000 
+        timeout = self.timeout
+        
         try:
             # Run the command in Docker container
             output = docker_util.run(
                 image_full_name=image_name,
                 run_command=command,
-                output_path=log_file
+                output_path=log_file,
+                timeout=timeout
             )
             
             # Parse the log output using instance's parser
@@ -109,9 +128,20 @@ class TestEvaluator:
             
             self.logger.info(f"✅ {phase} phase completed: {test_result.passed_count} passed, "
                            f"{test_result.failed_count} failed, {test_result.skipped_count} skipped")
-            
+           
             return test_result
             
+        except TimeoutError as e:
+            self.logger.error(f"⏰ {phase} phase timed out after {self.timeout}s: {str(e)}")
+            # Return empty test result on timeout
+            return TestResult(
+                passed_count=0,
+                failed_count=0,
+                skipped_count=0,
+                passed_tests=set(),
+                failed_tests=set(),
+                skipped_tests=set()
+            )
         except Exception as e:
             self.logger.error(f"❌ {phase} phase failed: {str(e)}")
             # Return empty test result on failure
@@ -438,11 +468,18 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
 def load_instances(input_file: Path) -> List[dict]:
     """Load instances from JSONL file."""
     instances = []
+    line_num = 0
     with open(input_file, 'r') as f:
         for line in f:
+            line_num += 1
             line = line.strip()
             if line:
-                instances.append(json.loads(line))
+                try:
+                    instances.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logging.getLogger(__name__).error(f"JSON decode error on line {line_num}: {e}")
+                    logging.getLogger(__name__).error(f"Line content (first 100 chars): {repr(line[:100])}")
+                    raise
     return instances
 
 
@@ -470,6 +507,34 @@ def load_existing_results(output_file: Path) -> Set[str]:
         except (json.JSONDecodeError, IOError) as e:
             logging.getLogger(__name__).warning(f"⚠️  Could not load existing results: {e}")
     return processed_ids
+
+
+def load_and_filter_existing_results(output_file: Path, current_instance_ids: Set[str]) -> List[dict]:
+    """
+    Load existing results and filter out instances that are being reprocessed.
+    
+    Args:
+        output_file: Path to existing results file
+        current_instance_ids: Set of instance IDs being processed in current run
+        
+    Returns:
+        List of existing results that should be preserved
+    """
+    preserved_results = []
+    if output_file.exists():
+        try:
+            with open(output_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        result = json.loads(line)
+                        instance_id = result.get('instance_id')
+                        # Only preserve results for instances not being reprocessed
+                        if instance_id and instance_id not in current_instance_ids:
+                            preserved_results.append(result)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.getLogger(__name__).warning(f"⚠️  Could not load existing results: {e}")
+    return preserved_results
 
 
 def append_result(result: dict, output_file: Path):
@@ -508,12 +573,22 @@ Examples:
   # Sequential processing with debug logging
   python test_and_evaluate.py --input instances.jsonl --output results.jsonl \\
     --max-workers 1 --log-level DEBUG
+  
+  # Process only first 5 instances
+  python test_and_evaluate.py --input instances.jsonl --output results.jsonl \\
+    --limit 5
+  
+  # Force reprocessing of instances in input file (preserves other results)
+  python test_and_evaluate.py --input new_instances.jsonl --output results.jsonl \\
+    --force
 
 Features:
   - Progressive output: Results are saved as each instance completes
   - Resume capability: Automatically skips already processed instances
   - Parallel processing: Configurable number of worker threads
   - Error handling: Graceful handling of failed instances
+  - Limit processing: Process only first N instances with --limit
+  - Selective force reprocessing: Only reprocess instances in current input file
         """
     )
     
@@ -564,6 +639,30 @@ Features:
         help="Disable progressive output (save all results at end instead of as they complete)"
     )
     
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Only process the first N instances from the input file"
+    )
+    
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force reprocessing of instances in current input file, preserving results for other instances"
+    )
+    
+    parser.add_argument(
+        "--path-to-dataset",
+        type=Path,
+        help="Path to dataset (optional)"
+    )
+
+    parser.add_argument(
+        "--path-to-dataset-with-tests",
+        type=Path,
+        help="Path to dataset with tests (optional)"
+    )
+    
     args = parser.parse_args()
     
     # Setup logging
@@ -571,8 +670,15 @@ Features:
     
     # Validate input file
     if not args.input.exists():
-        logger.error(f"Input file not found: {args.input}")
-        return 1
+        # Try to find the file in the parent directory
+        parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.input))
+        if parent_path.exists():
+            logger.info(f"Found input file at: {parent_path}")
+            args.input = parent_path
+        else:
+            logger.error(f"Input file not found: {args.input}")
+            logger.error(f"Also checked: {parent_path}")
+            return 1
     
     # Create output directory if needed
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -580,6 +686,34 @@ Features:
     logger.info(f"🚀 Starting test and evaluation process")
     logger.info(f"📁 Input: {args.input}")
     logger.info(f"📁 Output: {args.output}")
+    
+    if args.path_to_dataset:
+        logger.info(f"📁 Dataset: {args.path_to_dataset}")
+        # Validate dataset file
+        if not args.path_to_dataset.exists():
+            # Try to find the file in the parent directory
+            parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.path_to_dataset))
+            if parent_path.exists():
+                logger.info(f"Found dataset at: {parent_path}")
+                args.path_to_dataset = parent_path
+            else:
+                logger.error(f"Dataset file not found: {args.path_to_dataset}")
+                logger.error(f"Also checked: {parent_path}")
+                return 1
+    
+    if args.path_to_dataset_with_tests:
+        logger.info(f"📁 Dataset with tests: {args.path_to_dataset_with_tests}")
+        # Validate dataset with tests file
+        if not args.path_to_dataset_with_tests.exists():
+            # Try to find the file in the parent directory
+            parent_path = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), args.path_to_dataset_with_tests))
+            if parent_path.exists():
+                logger.info(f"Found dataset with tests at: {parent_path}")
+                args.path_to_dataset_with_tests = parent_path
+            else:
+                logger.error(f"Dataset with tests file not found: {args.path_to_dataset_with_tests}")
+                logger.error(f"Also checked: {parent_path}")
+                return 1
     logger.info(f"🐳 Registry: {args.registry or 'default'}")
     logger.info(f"👥 Workers: {args.max_workers}")
     logger.info(f"⏱️  Timeout: {args.timeout}s")
@@ -591,6 +725,36 @@ Features:
         logger.info("📖 Loading instances...")
         instances = load_instances(args.input)
         logger.info(f"✅ Loaded {len(instances)} instances")
+        
+        # Load dataset with tests if provided
+        if args.path_to_dataset_with_tests:
+            logger.info("📖 Loading dataset with tests...")
+            test_instances = load_instances(args.path_to_dataset_with_tests)
+            logger.info(f"✅ Loaded {len(test_instances)} test instances")
+            
+            # Merge test data into instances
+            for instance in instances:
+                instance_id = instance.get('instance_id')
+                for test_instance in test_instances:
+                    if test_instance.get('instance_id') == instance_id:
+                        # Merge test data
+                        if 'test_patch' in test_instance:
+                            instance['test_patch'] = test_instance['test_patch']
+                        logger.info(f"✅ Added test data for instance {instance_id}")
+        
+        # Apply limit if specified
+        if args.limit:
+            instances = instances[:args.limit]
+            logger.info(f"🔢 Limiting to first {args.limit} instances")
+        
+        # Clean up any orphaned containers from previous runs
+        logger.info("🧹 Cleaning up orphaned containers from previous runs...")
+        try:
+            cleaned_count = docker_util.cleanup_orphaned_containers(max_age_hours=1)
+            if cleaned_count > 0:
+                logger.info(f"✅ Cleaned up {cleaned_count} orphaned containers")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to clean up orphaned containers: {e}")
         
         # Create evaluator
         evaluator = TestEvaluator(
@@ -610,11 +774,36 @@ Features:
                 save_results(results, args.output)
                 processed_ids = set()  # No previously processed instances in batch mode
             else:
-                # Load existing results to skip already processed instances
-                logger.info("🔍 Checking for existing results...")
-                processed_ids = load_existing_results(args.output)
-                if processed_ids:
-                    logger.info(f"📋 Found {len(processed_ids)} already processed instances")
+                # Load existing results to skip already processed instances (unless force is enabled)
+                if args.force:
+                    logger.info("🔄 Force mode enabled - will reprocess instances in current input")
+                    
+                    # Get instance IDs from current input
+                    current_instance_ids = set()
+                    for instance in instances:
+                        if 'instance_id' in instance:
+                            current_instance_ids.add(instance['instance_id'])
+                    
+                    # Load existing results and preserve those not being reprocessed
+                    preserved_results = load_and_filter_existing_results(args.output, current_instance_ids)
+                    
+                    if preserved_results:
+                        logger.info(f"📋 Preserving {len(preserved_results)} existing results not in current input")
+                        # Rewrite output file with only preserved results
+                        save_results(preserved_results, args.output)
+                    else:
+                        # No results to preserve, clear the file
+                        if args.output.exists():
+                            logger.info(f"🗑️  Clearing existing output file: {args.output}")
+                            args.output.unlink()
+                    
+                    # Don't skip any instances from current input (force reprocessing)
+                    processed_ids = set()
+                else:
+                    logger.info("🔍 Checking for existing results...")
+                    processed_ids = load_existing_results(args.output)
+                    if processed_ids:
+                        logger.info(f"📋 Found {len(processed_ids)} already processed instances")
                 
                 # Process instances with progressive output
                 results = evaluator.process_instances(instances, args.output, processed_ids)
