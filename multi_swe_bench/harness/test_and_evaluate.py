@@ -48,7 +48,9 @@ import multi_swe_bench.harness.repos.java.google.gson
 import multi_swe_bench.harness.repos.java.google.guava
 import multi_swe_bench.harness.repos.java.google.guice
 import multi_swe_bench.harness.repos.java.seleniumhq.selenium
+import multi_swe_bench.harness.repos.java.jenkinsci.jenkins
 import multi_swe_bench.harness.repos.java.test.repo
+import multi_swe_bench.harness.repos.java.netty.netty
 
 
 class TestEvaluator:
@@ -127,14 +129,24 @@ class TestEvaluator:
         # Create log file for this phase
         log_file = self.temp_dir / f"{instance.pr.org}_{instance.pr.repo}_{instance.pr.number}_{phase}.log"
         
-        # Use extended timeout for Sentinel repository
+        # Set timeout based on repository
         timeout = self.timeout
+        
+        # Special handling for specific repositories that need longer timeouts
         if instance.pr.org == "alibaba" and instance.pr.repo == "Sentinel":
-            # Use a longer timeout for Sentinel repository (30 minutes)
-            extended_timeout = 1800  # 30 minutes
-            if extended_timeout > timeout:
-                self.logger.info(f"Using extended timeout of {extended_timeout}s for Sentinel repository")
-                timeout = extended_timeout
+            # Use 30-minute timeout for Sentinel repository
+            timeout = 1800  # 30 minutes
+            self.logger.info(f"Using extended timeout of {timeout}s for alibaba/Sentinel repository")
+        elif instance.pr.org == "jenkinsci" and instance.pr.repo == "jenkins":
+            # Use 30-minute timeout for Jenkins repository
+            timeout = 1800  # 30 minutes
+            self.logger.info(f"Using extended timeout of {timeout}s for jenkinsci/jenkins repository")
+        
+        # Special handling for specific PRs that need longer timeouts for fix_patch phase
+        if phase == "fix_patch" and instance.pr.number in [1617, 1605, 1631]:
+            timeout = 1800  # 30 minutes
+            self.logger.info(f"Using extended timeout of {timeout}s for PR #{instance.pr.number} fix_patch phase")
+            
         try:
             # Run the command in Docker container
             output = docker_util.run(
@@ -149,7 +161,7 @@ class TestEvaluator:
             
             self.logger.info(f"✅ {phase} phase completed: {test_result.passed_count} passed, "
                            f"{test_result.failed_count} failed, {test_result.skipped_count} skipped")
-            
+           
             return test_result
             
         except TimeoutError as e:
