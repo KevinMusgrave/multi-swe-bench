@@ -8,6 +8,11 @@ test results with transition categorizations (f2p, p2p, s2p, n2p).
 
 Usage:
     python test_and_evaluate.py --input instances.jsonl --output results.jsonl [options]
+
+Note:
+    Special handling has been added for certain PRs (1617, 1605, 1631) that require
+    longer timeouts for the fix_patch phase. These PRs will use a 30-minute timeout
+    instead of the default timeout specified by the --timeout parameter.
 """
 
 import argparse
@@ -109,13 +114,22 @@ class TestEvaluator:
         # Create log file for this phase
         log_file = self.temp_dir / f"{instance.pr.org}_{instance.pr.repo}_{instance.pr.number}_{phase}.log"
         
+        # Special cases for PRs that need longer timeouts
+        timeout = self.timeout
+        # List of PRs that need extended timeout for fix_patch phase
+        long_running_prs = [1617, 1605, 1631]
+        
+        if instance.pr.number in long_running_prs and phase == "fix_patch":
+            timeout = 1800  # 30 minutes for these PRs in fix_patch phase
+            self.logger.info(f"Using extended timeout of {timeout}s for PR #{instance.pr.number} {phase} phase")
+        
         try:
             # Run the command in Docker container
             output = docker_util.run(
                 image_full_name=image_name,
                 run_command=command,
                 output_path=log_file,
-                timeout=self.timeout
+                timeout=timeout
             )
             
             # Parse the log output using instance's parser
