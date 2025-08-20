@@ -62,8 +62,18 @@ class TestEvaluator:
         self.logger.info(f"Using temp directory: {self.temp_dir}")
     
     def cleanup(self):
-        """Clean up temporary files."""
+        """Clean up temporary files and orphaned Docker containers."""
         import shutil
+        
+        # Clean up orphaned containers
+        try:
+            cleaned_count = docker_util.cleanup_orphaned_containers(max_age_hours=0.5)
+            if cleaned_count > 0:
+                self.logger.info(f"Cleaned up {cleaned_count} orphaned Docker containers")
+        except Exception as e:
+            self.logger.warning(f"Failed to clean up orphaned containers: {e}")
+        
+        # Clean up temp directory
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
             self.logger.info(f"Cleaned up temp directory: {self.temp_dir}")
@@ -755,6 +765,15 @@ Features:
         if args.limit:
             instances = instances[:args.limit]
             logger.info(f"🔢 Limiting to first {args.limit} instances")
+        
+        # Clean up any orphaned containers from previous runs
+        logger.info("🧹 Cleaning up orphaned containers from previous runs...")
+        try:
+            cleaned_count = docker_util.cleanup_orphaned_containers(max_age_hours=1)
+            if cleaned_count > 0:
+                logger.info(f"✅ Cleaned up {cleaned_count} orphaned containers")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to clean up orphaned containers: {e}")
         
         # Create evaluator
         evaluator = TestEvaluator(

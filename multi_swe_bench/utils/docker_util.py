@@ -29,6 +29,69 @@ def exists(image_name: str) -> bool:
         return False
 
 
+def cleanup_orphaned_containers(image_pattern: str = None, max_age_hours: int = 1) -> int:
+    """
+    Clean up orphaned containers that may have been left behind.
+    
+    Args:
+        image_pattern: Optional pattern to match image names (e.g., "alibaba_m_sentinel")
+        max_age_hours: Only clean up containers older than this many hours
+    
+    Returns:
+        Number of containers cleaned up
+    """
+    import time
+    from datetime import datetime, timezone
+    
+    logger = logging.getLogger(__name__)
+    cleaned_count = 0
+    
+    try:
+        # Get all containers (including stopped ones)
+        all_containers = docker_client.containers.list(all=True)
+        current_time = datetime.now(timezone.utc)
+        
+        for container in all_containers:
+            try:
+                # Check if container matches our pattern
+                if image_pattern:
+                    if not any(image_pattern.lower() in tag.lower() 
+                             for tag in container.image.tags if tag):
+                        continue
+                
+                # Check container age
+                created_time = datetime.fromisoformat(container.attrs['Created'].replace('Z', '+00:00'))
+                age_hours = (current_time - created_time).total_seconds() / 3600
+                
+                if age_hours < max_age_hours:
+                    continue
+                
+                # Clean up the container
+                container_id = container.short_id
+                image_name = container.image.tags[0] if container.image.tags else "unknown"
+                
+                if container.status == 'running':
+                    logger.info(f"Stopping orphaned container: {container_id} ({image_name})")
+                    container.stop(timeout=10)
+                
+                logger.info(f"Removing orphaned container: {container_id} ({image_name})")
+                container.remove(force=True)
+                cleaned_count += 1
+                
+            except Exception as e:
+                logger.warning(f"Failed to clean up container {container.short_id}: {e}")
+                continue
+        
+        if cleaned_count > 0:
+            logger.info(f"Cleaned up {cleaned_count} orphaned containers")
+        
+        return cleaned_count
+        
+    except Exception as e:
+        logger.error(f"Error during orphaned container cleanup: {e}")
+        return 0
+
+
 def build(
     workdir: Path, dockerfile_name: str, image_full_name: str, logger: logging.Logger
 ):
@@ -119,6 +182,27 @@ def run(
     finally:
         if container:
             try:
+                # First try to stop the container gracefully
+                try:
+                    container.stop(timeout=10)
+                    logging.getLogger(__name__).debug(f"Container stopped: {container.short_id}")
+                except Exception as stop_e:
+                    # If graceful stop fails, try to kill it
+                    try:
+                        container.kill()
+                        logging.getLogger(__name__).debug(f"Container killed: {container.short_id}")
+                    except Exception as kill_e:
+                        logging.getLogger(__name__).warning(f"Failed to stop/kill container {container.short_id}: {kill_e}")
+                
+                # Now remove the container
                 container.remove(force=True)
+                logging.getLogger(__name__).debug(f"Container removed: {container.short_id}")
+                
             except Exception as e:
-                print(f"Warning: Failed to remove container: {e}")
+                logging.getLogger(__name__).warning(f"Failed to cleanup container: {e}")
+                # Try one more time with force removal
+                try:
+                    container.remove(force=True)
+                    logging.getLogger(__name__).debug(f"Container force-removed on retry")
+                except Exception as retry_e:
+                    logging.getLogger(__name__).error(f"Final container cleanup failed: {retry_e}")
