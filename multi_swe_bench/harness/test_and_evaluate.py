@@ -13,6 +13,9 @@ Note:
     Special handling has been added for certain PRs (1617, 1605, 1631) that require
     longer timeouts for the fix_patch phase. These PRs will use a 30-minute timeout
     instead of the default timeout specified by the --timeout parameter.
+    
+    Additionally, all PRs from the alibaba/Sentinel repository will use a 30-minute
+    timeout for all phases to ensure tests have enough time to complete.
 """
 
 import argparse
@@ -124,15 +127,14 @@ class TestEvaluator:
         # Create log file for this phase
         log_file = self.temp_dir / f"{instance.pr.org}_{instance.pr.repo}_{instance.pr.number}_{phase}.log"
         
-        # Special cases for PRs that need longer timeouts
+        # Use extended timeout for Sentinel repository
         timeout = self.timeout
-        # List of PRs that need extended timeout for fix_patch phase
-        long_running_prs = [1617, 1605, 1631]
-        
-        if instance.pr.number in long_running_prs and phase == "fix_patch":
-            timeout = 1800  # 30 minutes for these PRs in fix_patch phase
-            self.logger.info(f"Using extended timeout of {timeout}s for PR #{instance.pr.number} {phase} phase")
-        
+        if instance.pr.org == "alibaba" and instance.pr.repo == "Sentinel":
+            # Use a longer timeout for Sentinel repository (30 minutes)
+            extended_timeout = 1800  # 30 minutes
+            if extended_timeout > timeout:
+                self.logger.info(f"Using extended timeout of {extended_timeout}s for Sentinel repository")
+                timeout = extended_timeout
         try:
             # Run the command in Docker container
             output = docker_util.run(
