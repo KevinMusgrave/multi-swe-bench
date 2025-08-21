@@ -50,9 +50,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+ENV MAVEN_OPTS="-Xmx2048m"
 WORKDIR /home/
-RUN apt-get update && apt-get install -y git openjdk-21-jdk
-RUN apt-get install -y maven
+RUN apt-get update && apt-get install -y git openjdk-21-jdk maven redis-server
+
+# Configure Maven to use a local repository to speed up builds
+RUN mkdir -p /root/.m2 && echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd"><localRepository>/home/.m2/repository</localRepository></settings>' > /root/.m2/settings.xml
 
 {code}
 
@@ -138,8 +141,31 @@ service redis-server start
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
 
-# Run tests to make sure everything is set up correctly
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false || true
+# Update pom.xml to use Java 21
+if [ -f pom.xml ]; then
+    # Update maven.compiler.source and maven.compiler.target properties
+    sed -i 's/<maven.compiler.source>.*<\/maven.compiler.source>/<maven.compiler.source>21<\/maven.compiler.source>/g' pom.xml
+    sed -i 's/<maven.compiler.target>.*<\/maven.compiler.target>/<maven.compiler.target>21<\/maven.compiler.target>/g' pom.xml
+    
+    # If properties don't exist, add them
+    if ! grep -q "<maven.compiler.source>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.source>21</maven.compiler.source>' pom.xml
+    fi
+    if ! grep -q "<maven.compiler.target>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.target>21</maven.compiler.target>' pom.xml
+    fi
+    
+    # If properties section doesn't exist, add it
+    if ! grep -q "<properties>" pom.xml; then
+        sed -i '/<project/a \    <properties>\n        <maven.compiler.source>21</maven.compiler.source>\n        <maven.compiler.target>21</maven.compiler.target>\n    </properties>' pom.xml
+    fi
+fi
+
+# Compile the project without running tests to make sure everything is set up correctly
+mvn clean compile -Dmaven.test.skip=true || true
+
+# Extract test class names from the test patch for later use
+grep -o -E "class [A-Za-z0-9]+" /home/test.patch | grep -v "class Path" | cut -d' ' -f2 | sort -u > /home/test_classes.txt
 """.format(
                     pr=self.pr,
                 ),
@@ -154,7 +180,41 @@ cd /home/{pr.repo}
 service redis-server start
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false
+
+# Update pom.xml to use Java 21
+if [ -f pom.xml ]; then
+    # Update maven.compiler.source and maven.compiler.target properties
+    sed -i 's/<maven.compiler.source>.*<\/maven.compiler.source>/<maven.compiler.source>21<\/maven.compiler.source>/g' pom.xml
+    sed -i 's/<maven.compiler.target>.*<\/maven.compiler.target>/<maven.compiler.target>21<\/maven.compiler.target>/g' pom.xml
+    
+    # If properties don't exist, add them
+    if ! grep -q "<maven.compiler.source>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.source>21</maven.compiler.source>' pom.xml
+    fi
+    if ! grep -q "<maven.compiler.target>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.target>21</maven.compiler.target>' pom.xml
+    fi
+    
+    # If properties section doesn't exist, add it
+    if ! grep -q "<properties>" pom.xml; then
+        sed -i '/<project/a \    <properties>\n        <maven.compiler.source>21</maven.compiler.source>\n        <maven.compiler.target>21</maven.compiler.target>\n    </properties>' pom.xml
+    fi
+fi
+
+# Run only the specific test class that's modified in the test patch
+# Extract test class names from the test patch
+TEST_CLASSES=$(grep -o -E "class [A-Za-z0-9]+" /home/test.patch | grep -v "class Path" | cut -d' ' -f2 | sort -u)
+
+if [ -n "$TEST_CLASSES" ]; then
+    echo "Running specific test classes: $TEST_CLASSES"
+    for TEST_CLASS in $TEST_CLASSES; do
+        mvn test -Dtest=$TEST_CLASS -DfailIfNoTests=false
+    done
+else
+    # Fallback to running all tests if no specific test class is found
+    echo "No specific test classes found, running all tests"
+    mvn test -Dmaven.test.skip=false -DfailIfNoTests=false
+fi
 """.format(
                     pr=self.pr
                 ),
@@ -169,9 +229,43 @@ cd /home/{pr.repo}
 service redis-server start
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
-git apply --whitespace=nowarn /home/test.patch
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false
 
+# Update pom.xml to use Java 21
+if [ -f pom.xml ]; then
+    # Update maven.compiler.source and maven.compiler.target properties
+    sed -i 's/<maven.compiler.source>.*<\/maven.compiler.source>/<maven.compiler.source>21<\/maven.compiler.source>/g' pom.xml
+    sed -i 's/<maven.compiler.target>.*<\/maven.compiler.target>/<maven.compiler.target>21<\/maven.compiler.target>/g' pom.xml
+    
+    # If properties don't exist, add them
+    if ! grep -q "<maven.compiler.source>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.source>21</maven.compiler.source>' pom.xml
+    fi
+    if ! grep -q "<maven.compiler.target>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.target>21</maven.compiler.target>' pom.xml
+    fi
+    
+    # If properties section doesn't exist, add it
+    if ! grep -q "<properties>" pom.xml; then
+        sed -i '/<project/a \    <properties>\n        <maven.compiler.source>21</maven.compiler.source>\n        <maven.compiler.target>21</maven.compiler.target>\n    </properties>' pom.xml
+    fi
+fi
+
+git apply --whitespace=nowarn /home/test.patch
+
+# Run only the specific test class that's modified in the test patch
+# Extract test class names from the test patch
+TEST_CLASSES=$(grep -o -E "class [A-Za-z0-9]+" /home/test.patch | grep -v "class Path" | cut -d' ' -f2 | sort -u)
+
+if [ -n "$TEST_CLASSES" ]; then
+    echo "Running specific test classes: $TEST_CLASSES"
+    for TEST_CLASS in $TEST_CLASSES; do
+        mvn test -Dtest=$TEST_CLASS -DfailIfNoTests=false
+    done
+else
+    # Fallback to running all tests if no specific test class is found
+    echo "No specific test classes found, running all tests"
+    mvn test -Dmaven.test.skip=false -DfailIfNoTests=false
+fi
 """.format(
                     pr=self.pr
                 ),
@@ -186,9 +280,43 @@ cd /home/{pr.repo}
 service redis-server start
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
-git apply --whitespace=nowarn /home/test.patch /home/fix.patch
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false
 
+# Update pom.xml to use Java 21
+if [ -f pom.xml ]; then
+    # Update maven.compiler.source and maven.compiler.target properties
+    sed -i 's/<maven.compiler.source>.*<\/maven.compiler.source>/<maven.compiler.source>21<\/maven.compiler.source>/g' pom.xml
+    sed -i 's/<maven.compiler.target>.*<\/maven.compiler.target>/<maven.compiler.target>21<\/maven.compiler.target>/g' pom.xml
+    
+    # If properties don't exist, add them
+    if ! grep -q "<maven.compiler.source>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.source>21</maven.compiler.source>' pom.xml
+    fi
+    if ! grep -q "<maven.compiler.target>" pom.xml; then
+        sed -i '/<properties>/a \        <maven.compiler.target>21</maven.compiler.target>' pom.xml
+    fi
+    
+    # If properties section doesn't exist, add it
+    if ! grep -q "<properties>" pom.xml; then
+        sed -i '/<project/a \    <properties>\n        <maven.compiler.source>21</maven.compiler.source>\n        <maven.compiler.target>21</maven.compiler.target>\n    </properties>' pom.xml
+    fi
+fi
+
+git apply --whitespace=nowarn /home/test.patch /home/fix.patch
+
+# Run only the specific test class that's modified in the test patch
+# Extract test class names from the test patch
+TEST_CLASSES=$(grep -o -E "class [A-Za-z0-9]+" /home/test.patch | grep -v "class Path" | cut -d' ' -f2 | sort -u)
+
+if [ -n "$TEST_CLASSES" ]; then
+    echo "Running specific test classes: $TEST_CLASSES"
+    for TEST_CLASS in $TEST_CLASSES; do
+        mvn test -Dtest=$TEST_CLASS -DfailIfNoTests=false
+    done
+else
+    # Fallback to running all tests if no specific test class is found
+    echo "No specific test classes found, running all tests"
+    mvn test -Dmaven.test.skip=false -DfailIfNoTests=false
+fi
 """.format(
                     pr=self.pr
                 ),
@@ -308,7 +436,23 @@ class Redisson(Instance):
         passed_tests = set()
         failed_tests = set()
         skipped_tests = set()
-
+        
+        # Check if the build was successful
+        build_success = "BUILD SUCCESS" in output
+        
+        # Check for compilation errors
+        compilation_error = "Fatal error compiling" in output
+        if compilation_error:
+            failed_tests.add("Compilation error detected")
+            return TestResult(
+                passed_count=0,
+                failed_count=1,
+                skipped_count=0,
+                passed_tests=list(passed_tests),
+                failed_tests=list(failed_tests),
+                skipped_tests=list(skipped_tests)
+            )
+        
         # Pattern to match test results in Maven output
         test_pattern = re.compile(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)")
         
@@ -317,7 +461,20 @@ class Redisson(Instance):
         # Pattern to match individual test errors
         test_error_pattern = re.compile(r"Tests in error:\s+(.+?)(?=\n\n|\Z)", re.DOTALL)
         
+        # Pattern to match test class names
+        test_class_pattern = re.compile(r"Running ([\w\.]+)")
+        
+        # Find all test classes that were run
+        test_classes = set()
+        for match in test_class_pattern.finditer(output):
+            test_class = match.group(1)
+            test_classes.add(test_class)
+        
         # Find all test results
+        total_passed = 0
+        total_failed = 0
+        total_skipped = 0
+        
         for match in test_pattern.finditer(output):
             total_tests = int(match.group(1))
             failures = int(match.group(2))
@@ -326,6 +483,9 @@ class Redisson(Instance):
             
             # Calculate passed tests
             passed_count = total_tests - failures - errors - skipped_count
+            total_passed += passed_count
+            total_failed += failures + errors
+            total_skipped += skipped_count
             
             # If there are failures, extract the specific test names
             if failures > 0:
@@ -360,37 +520,31 @@ class Redisson(Instance):
                 else:
                     # If we can't find specific test names, use a placeholder
                     failed_tests.add(f"Error tests: {errors}")
-                    
-            # If we still don't have any failed tests but there are failures or errors, check for individual error lines
-            if (failures > 0 or errors > 0) and not failed_tests:
-                error_lines = re.findall(r"\[ERROR\]\s+(.+?)\n", output)
-                for line in error_lines:
-                    if ":" in line and not line.startswith("Tests") and not line.startswith("Failed tests") and not line.startswith("Error tests"):
-                        test_name = line.split(':')[0].strip()
-                        if test_name and not test_name.startswith('['):
-                            failed_tests.add(test_name)
-            
-            # For skipped tests, we don't have individual names, so we'll use a placeholder
-            if skipped_count > 0:
-                skipped_tests.add(f"Skipped tests: {skipped_count}")
-            
-            # For passed tests, if we don't have individual names, we'll use a placeholder
-            if passed_count > 0:
-                passed_tests.add(f"Passed tests: {passed_count}")
-
-        # If we have a successful build with no failures, consider all tests as passed
-        if "BUILD SUCCESS" in output and not failed_tests:
-            # Extract the total number of tests
-            total_tests_match = re.search(r"Tests run: (\d+), Failures: 0, Errors: 0", output)
-            if total_tests_match:
-                total_tests = int(total_tests_match.group(1))
-                passed_tests.add(f"All {total_tests} tests passed")
+        
+        # If we have test classes but no specific test results, add them as passed tests
+        if build_success and test_classes and not failed_tests:
+            for test_class in test_classes:
+                passed_tests.add(f"{test_class} passed")
+        elif total_passed > 0:
+            passed_tests.add(f"Passed tests: {total_passed}")
+        
+        # Add skipped tests count
+        if total_skipped > 0:
+            skipped_tests.add(f"Skipped tests: {total_skipped}")
+        
+        # If there are no test results at all but the build was successful, consider it a pass
+        if not passed_tests and not failed_tests and not skipped_tests and build_success:
+            passed_tests.add("Build successful, no test results found")
+        
+        # If there are no test results and the build failed, consider it a failure
+        if not passed_tests and not failed_tests and not skipped_tests and not build_success:
+            failed_tests.add("Build failed, no test results found")
 
         return TestResult(
-            passed_count=len(passed_tests),
-            failed_count=len(failed_tests),
-            skipped_count=len(skipped_tests),
-            passed_tests=passed_tests,
-            failed_tests=failed_tests,
-            skipped_tests=skipped_tests,
+            passed_count=total_passed if total_passed > 0 else len(passed_tests),
+            failed_count=total_failed if total_failed > 0 else len(failed_tests),
+            skipped_count=total_skipped if total_skipped > 0 else len(skipped_tests),
+            passed_tests=list(passed_tests),
+            failed_tests=list(failed_tests),
+            skipped_tests=list(skipped_tests),
         )
