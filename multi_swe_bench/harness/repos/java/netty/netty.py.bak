@@ -172,18 +172,18 @@ bash /home/check_git_changes.sh
 # Update pom.xml to use Java 8 instead of Java 6/7
 find . -name "pom.xml" -exec sed -i 's/<source>1.6<\\/source>/<source>11<\\/source>/g' {} \\;
 find . -name "pom.xml" -exec sed -i 's/<target>1.6<\\/target>/<target>11<\\/target>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<source>11<\\/source>/<source>11<\\/source>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<target>11<\\/target>/<target>11<\\/target>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<source>1.7<\\/source>/<source>11<\\/source>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<target>1.7<\\/target>/<target>11<\\/target>/g' {} \\;
 find . -name "pom.xml" -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
 find . -name "pom.xml" -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<maven.compiler.source>11<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<maven.compiler.target>11<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<maven.compiler.source>1.7<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<maven.compiler.target>1.7<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
 
 # Update the maven-compiler-plugin configuration
 find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<source>1.6<\\/source>/<configuration><source>11<\\/source>/g' {} \\;
 find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<target>1.6<\\/target>/<configuration><target>11<\\/target>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<source>11<\\/source>/<configuration><source>11<\\/source>/g' {} \\;
-find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<target>11<\\/target>/<configuration><target>11<\\/target>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<source>1.7<\\/source>/<configuration><source>11<\\/source>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<configuration>\\s*<target>1.7<\\/target>/<configuration><target>11<\\/target>/g' {} \\;
 
 # Directly modify the maven-compiler-plugin configuration in all pom.xml files
 find . -name "pom.xml" -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>\\s*<version>[^<]*<\\/version>\\s*<configuration>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <version>3.8.0<\\/version>\\n                <configuration>\\n                    <source>11<\\/source>\\n                    <target>11<\\/target>/g' {} \\;
@@ -196,7 +196,7 @@ sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.t
 sed -i '/<properties>/a \\n        <maven.compiler.source>11<\\/maven.compiler.source>\\n        <maven.compiler.target>11<\\/maven.compiler.target>' pom.xml
 
 # Update animal-sniffer-maven-plugin configuration to use Java 11
-find . -name "pom.xml" -exec sed -i 's/<signature>\\s*<groupId>org.codehaus.mojo.signature<\\/groupId>\\s*<artifactId>java16<\\/artifactId>/<signature><groupId>org.codehaus.mojo.signature<\\/groupId><artifactId>java18<\\/artifactId>/g' {} \\;
+find . -name "pom.xml" -exec sed -i 's/<signature>\\s*<groupId>org.codehaus.mojo.signature<\\/groupId>\\s*<artifactId>java16<\\/artifactId>/<signature><groupId>org.codehaus.mojo.signature<\\/groupId><artifactId>java17<\\/artifactId>/g' {} \\;
 
 # Run initial tests to make sure everything is set up
 # First, install the project without running tests to ensure all dependencies are downloaded
@@ -226,10 +226,10 @@ cp /home/maven.config .mvn/
 cp /home/jvm.config .mvn/
 
 # Update all pom.xml files to use Java 7
-find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>11<\\/source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>11<\\/target>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>1.7<\\/source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>1.7<\\/target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>1.7<\\/maven.compiler.source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>1.7<\\/maven.compiler.target>/g' {} \\;
 
 # Add compiler plugin configuration to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
@@ -239,8 +239,8 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
         <artifactId>maven-compiler-plugin</artifactId>\\
         <version>3.8.0</version>\\
         <configuration>\\
-          <source>11</source>\\
-          <target>11</target>\\
+          <source>1.7</source>\\
+          <target>1.7</target>\\
         </configuration>\\
       </plugin>\\
     </plugins>' {} \\;
@@ -249,21 +249,21 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
 find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>java16<\\/artifactId>/<artifactId>java17<\\/artifactId>/g' {} \\;
 
 # Directly modify the maven-compiler-plugin configuration in all pom.xml files
-find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>11<\\/source>\\n                    <target>11<\\/target>\\n                <\\/configuration>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>1.7<\\/source>\\n                    <target>1.7<\\/target>\\n                <\\/configuration>/g' {} \\;
 
 # Add properties to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/properties>/i \\
-    <maven.compiler.source>11</maven.compiler.source>\\
-    <maven.compiler.target>11</maven.compiler.target>\\
-    <java.version>11</java.version>\\
-    <javac.source>11</javac.source>\\
-    <javac.target>11</javac.target>' {} \\;
+    <maven.compiler.source>1.7</maven.compiler.source>\\
+    <maven.compiler.target>1.7</maven.compiler.target>\\
+    <java.version>1.7</java.version>\\
+    <javac.source>1.7</javac.source>\\
+    <javac.target>1.7</javac.target>' {} \\;
 
 # First install dependencies without running tests
-MAVEN_OPTS="-Dmaven.compiler.source=11 -Dmaven.compiler.target=11" mvn clean install -DskipTests -Dmaven.compiler.source=11 -Dmaven.compiler.target=11 -Danimal.sniffer.skip=true -Djava.version=11 -Djavac.source=11 -Djavac.target=11 -s ~/.m2/settings.xml
+MAVEN_OPTS="-Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7" mvn clean install -DskipTests -Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7 -Danimal.sniffer.skip=true -Djava.version=1.7 -Djavac.source=1.7 -Djavac.target=1.7 -s ~/.m2/settings.xml
 
 # Then run the tests
-MAVEN_OPTS="-Dmaven.compiler.source=11 -Dmaven.compiler.target=11" mvn test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=11 -Dmaven.compiler.target=11 -Danimal.sniffer.skip=true -Djava.version=11 -Djavac.source=11 -Djavac.target=11 -s ~/.m2/settings.xml
+MAVEN_OPTS="-Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7" mvn test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7 -Danimal.sniffer.skip=true -Djava.version=1.7 -Djavac.source=1.7 -Djavac.target=1.7 -s ~/.m2/settings.xml
 """,
             ),
             File(
@@ -286,10 +286,10 @@ cp /home/maven.config .mvn/
 cp /home/jvm.config .mvn/
 
 # Update all pom.xml files to use Java 7
-find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>11<\\/source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>11<\\/target>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>1.7<\\/source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>1.7<\\/target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>1.7<\\/maven.compiler.source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>1.7<\\/maven.compiler.target>/g' {} \\;
 
 # Add compiler plugin configuration to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
@@ -299,8 +299,8 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
         <artifactId>maven-compiler-plugin</artifactId>\\
         <version>3.8.0</version>\\
         <configuration>\\
-          <source>11</source>\\
-          <target>11</target>\\
+          <source>1.7</source>\\
+          <target>1.7</target>\\
         </configuration>\\
       </plugin>\\
     </plugins>' {} \\;
@@ -309,18 +309,18 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
 find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>java16<\\/artifactId>/<artifactId>java17<\\/artifactId>/g' {} \\;
 
 # Directly modify the maven-compiler-plugin configuration in all pom.xml files
-find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>11<\\/source>\\n                    <target>11<\\/target>\\n                <\\/configuration>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>1.7<\\/source>\\n                    <target>1.7<\\/target>\\n                <\\/configuration>/g' {} \\;
 
 # Add properties to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/properties>/i \\
-    <maven.compiler.source>11</maven.compiler.source>\\
-    <maven.compiler.target>11</maven.compiler.target>\\
-    <java.version>11</java.version>\\
-    <javac.source>11</javac.source>\\
-    <javac.target>11</javac.target>' {} \\;
+    <maven.compiler.source>1.7</maven.compiler.source>\\
+    <maven.compiler.target>1.7</maven.compiler.target>\\
+    <java.version>1.7</java.version>\\
+    <javac.source>1.7</javac.source>\\
+    <javac.target>1.7</javac.target>' {} \\;
 
 # Run the tests
-MAVEN_OPTS="-Dmaven.compiler.source=11 -Dmaven.compiler.target=11" mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=11 -Dmaven.compiler.target=11 -Danimal.sniffer.skip=true -Djava.version=11 -Djavac.source=11 -Djavac.target=11 -s ~/.m2/settings.xml
+MAVEN_OPTS="-Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7" mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7 -Danimal.sniffer.skip=true -Djava.version=1.7 -Djavac.source=1.7 -Djavac.target=1.7 -s ~/.m2/settings.xml
 """,
             ),
             File(
@@ -340,28 +340,28 @@ cp /home/toolchains.xml ~/.m2/toolchains.xml
 # Create a custom .mvn/jvm.config file
 mkdir -p .mvn
 cat > .mvn/jvm.config << 'EOL'
--Dmaven.compiler.source=11
--Dmaven.compiler.target=11
--Djava.version=11
--Djavac.source=11
--Djavac.target=11
+-Dmaven.compiler.source=1.7
+-Dmaven.compiler.target=1.7
+-Djava.version=1.7
+-Djavac.source=1.7
+-Djavac.target=1.7
 EOL
 
 # Create a custom .mvn/maven.config file
 cat > .mvn/maven.config << 'EOL'
--Dmaven.compiler.source=11
--Dmaven.compiler.target=11
--Djava.version=11
--Djavac.source=11
--Djavac.target=11
+-Dmaven.compiler.source=1.7
+-Dmaven.compiler.target=1.7
+-Djava.version=1.7
+-Djavac.source=1.7
+-Djavac.target=1.7
 -Danimal.sniffer.skip=true
 EOL
 
 # Update all pom.xml files to use Java 7
-find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>11<\\/source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>11<\\/target>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>11<\\/maven.compiler.source>/g' {} \\;
-find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>11<\\/maven.compiler.target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<source>1.6<\\/source>/<source>1.7<\\/source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<target>1.6<\\/target>/<target>1.7<\\/target>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.source>1.6<\\/maven.compiler.source>/<maven.compiler.source>1.7<\\/maven.compiler.source>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<maven.compiler.target>1.6<\\/maven.compiler.target>/<maven.compiler.target>1.7<\\/maven.compiler.target>/g' {} \\;
 
 # Add compiler plugin configuration to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
@@ -371,8 +371,8 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
         <artifactId>maven-compiler-plugin</artifactId>\\
         <version>3.8.0</version>\\
         <configuration>\\
-          <source>11</source>\\
-          <target>11</target>\\
+          <source>1.7</source>\\
+          <target>1.7</target>\\
         </configuration>\\
       </plugin>\\
     </plugins>' {} \\;
@@ -381,18 +381,18 @@ find . -name "pom.xml" -type f -exec sed -i '/<\\/build>/i \\
 find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>java16<\\/artifactId>/<artifactId>java17<\\/artifactId>/g' {} \\;
 
 # Directly modify the maven-compiler-plugin configuration in all pom.xml files
-find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>11<\\/source>\\n                    <target>11<\\/target>\\n                <\\/configuration>/g' {} \\;
+find . -name "pom.xml" -type f -exec sed -i 's/<artifactId>maven-compiler-plugin<\\/artifactId>/<artifactId>maven-compiler-plugin<\\/artifactId>\\n                <configuration>\\n                    <source>1.7<\\/source>\\n                    <target>1.7<\\/target>\\n                <\\/configuration>/g' {} \\;
 
 # Add properties to all pom.xml files
 find . -name "pom.xml" -type f -exec sed -i '/<\\/properties>/i \\
-    <maven.compiler.source>11</maven.compiler.source>\\
-    <maven.compiler.target>11</maven.compiler.target>\\
-    <java.version>11</java.version>\\
-    <javac.source>11</javac.source>\\
-    <javac.target>11</javac.target>' {} \\;
+    <maven.compiler.source>1.7</maven.compiler.source>\\
+    <maven.compiler.target>1.7</maven.compiler.target>\\
+    <java.version>1.7</java.version>\\
+    <javac.source>1.7</javac.source>\\
+    <javac.target>1.7</javac.target>' {} \\;
 
 # Run the tests
-MAVEN_OPTS="-Dmaven.compiler.source=11 -Dmaven.compiler.target=11" mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=11 -Dmaven.compiler.target=11 -Danimal.sniffer.skip=true -Djava.version=11 -Djavac.source=11 -Djavac.target=11 -s ~/.m2/settings.xml
+MAVEN_OPTS="-Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7" mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false -Dsurefire.useFile=false -Dmaven.compiler.source=1.7 -Dmaven.compiler.target=1.7 -Danimal.sniffer.skip=true -Djava.version=1.7 -Djavac.source=1.7 -Djavac.target=1.7 -s ~/.m2/settings.xml
 """,
             ),
         ]
