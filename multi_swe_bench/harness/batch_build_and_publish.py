@@ -24,7 +24,6 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -70,7 +69,7 @@ class DockerImageBuilder:
         self.registry = registry.rstrip('/')
         self.workdir = workdir
         self.max_workers = max_workers
-        self.repo_root = Path("/home/juan-all-hands/dev/multi-swe-bench-fork")
+        self.repo_root = Path(__file__).parent.parent.parent
         
         # Create required directories
         self.build_workdir = workdir / "build"
@@ -176,7 +175,7 @@ class DockerImageBuilder:
             
             # Build command
             cmd = [
-                '/home/juan-all-hands/micromamba/bin/python', '-m', 'multi_swe_bench.harness.build_dataset',
+                'python', '-m', 'multi_swe_bench.harness.build_dataset',
                 '--raw_dataset_files', str(temp_dataset),
                 '--mode', 'image',
                 '--workdir', str(self.build_workdir),
