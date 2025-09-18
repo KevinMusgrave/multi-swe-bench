@@ -127,6 +127,10 @@ exit 0
                 """#!/bin/bash
 set -e
 
+# The patch command is part of the 'patch' package, which may not be installed.
+# Let's install it here to be safe.
+apt-get update && apt-get install -y patch
+
 cd /home/{pr.repo}
 git config core.autocrlf input
 git config core.filemode false
@@ -166,7 +170,8 @@ cd /home/{pr.repo}
 set -e
 
 cd /home/{pr.repo}
-git apply /home/test.patch
+# Use patch -p1 instead of git apply to handle new files in new directories
+patch -p1 < /home/test.patch
 ./mvnw -V --no-transfer-progress -Pgen-javadoc -Pgen-dokka clean test -Dsurefire.useFile=false -Dmaven.test.skip=false -DfailIfNoTests=false
 
 """.format(
@@ -180,7 +185,9 @@ git apply /home/test.patch
 set -e
 
 cd /home/{pr.repo}
-git apply /home/test.patch /home/fix.patch
+# Use patch -p1 for both patches
+patch -p1 < /home/test.patch
+patch -p1 < /home/fix.patch
 ./mvnw -V --no-transfer-progress -Pgen-javadoc -Pgen-dokka clean test -Dsurefire.useFile=false -Dmaven.test.skip=false -DfailIfNoTests=false
 
 """.format(
