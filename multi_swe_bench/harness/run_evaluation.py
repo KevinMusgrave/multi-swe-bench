@@ -241,22 +241,25 @@ class CliArgs:
     def __post_init__(self):
         self._check_mode()
         # self._check_workdir()
-        self._check_patch_files()
+        # self._check_patch_files()
         self._check_dataset_files()
-        self._check_log_dir()
+        # self._check_log_dir()
         self._check_log_level()
         self._check_log_to_console()
         self._check_max_workers()
 
         if self.mode == "evaluation":
-            self._check_repo_dir()
-            self._check_output_dir()
+            # self._check_repo_dir()
+            # self._check_output_dir()
+            pass
         elif self.mode == "instance":
-            self._check_repo_dir()
+            # self._check_repo_dir()
+            pass
         elif self.mode == "instance_only":
             pass
         elif self.mode == "image":
-            self._check_repo_dir()
+            # self._check_repo_dir()
+            pass
 
     def _check_mode(self):
         valid_modes = ["evaluation", "instance", "instance_only", "image"]
