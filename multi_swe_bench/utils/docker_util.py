@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import docker
+import os
 
 docker_client = docker.from_env()
 
@@ -68,6 +69,14 @@ def build(
         raise e
 
 
+def _translate_to_host_path(container_path: str) -> str:
+    """Convert container path to host path for Docker-in-Docker."""
+    host_base = os.environ.get('HOST_EVAL_OUTPUTS')
+    if host_base and container_path.startswith('/app/evaluation/evaluation_outputs'):
+        return container_path.replace('/app/evaluation/evaluation_outputs', host_base, 1)
+    return container_path
+
+
 def run(
     image_full_name: str,
     run_command: str,
@@ -75,6 +84,13 @@ def run(
     global_env: Optional[list[str]] = None,
     volumes: Optional[Union[dict[str, str], list[str]]] = None,
 ) -> str:
+    # Translate volume paths for Docker-in-Docker
+    if volumes:
+        volumes = {
+            _translate_to_host_path(str(source)): target 
+            for source, target in volumes.items()
+        }
+    
     container = None
     try:
         container = docker_client.containers.run(
