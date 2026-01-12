@@ -13,6 +13,8 @@
 #  limitations under the License.
 
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import Optional, Union
 
@@ -83,15 +85,49 @@ def run(
     output_path: Optional[Path] = None,
     global_env: Optional[list[str]] = None,
     volumes: Optional[Union[dict[str, str], list[str]]] = None,
-) -> str:
+    timeout: Optional[int] = None,
+) -> tuple[str, bool]:
+    """
+    Run a command in a Docker container.
+
+    Args:
+        image_full_name: Docker image name
+        run_command: Command to run in the container
+        output_path: Optional path to write output to
+        global_env: Optional environment variables
+        volumes: Optional volume mounts
+        timeout: Optional timeout in seconds. If None, runs without timeout.
+
+    Returns:
+        Tuple of (output string, timed_out boolean)
+    """
     # Translate volume paths for Docker-in-Docker
     if volumes:
         volumes = {
-            _translate_to_host_path(str(source)): target 
+            _translate_to_host_path(str(source)): target
             for source, target in volumes.items()
         }
-    
+
     container = None
+    output = ""
+    timed_out = False
+    exception = None
+
+    def collect_logs():
+        nonlocal output, exception
+        try:
+            if output_path:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    for line in container.logs(stream=True, follow=True):
+                        line_decoded = line.decode("utf-8")
+                        f.write(line_decoded)
+                        output += line_decoded
+            else:
+                container.wait()
+                output = container.logs().decode("utf-8")
+        except Exception as e:
+            exception = e
+
     try:
         container = docker_client.containers.run(
             image=image_full_name,
@@ -104,18 +140,34 @@ def run(
             volumes=volumes,
         )
 
-        output = ""
-        if output_path:
-            with open(output_path, "w", encoding="utf-8") as f:
-                for line in container.logs(stream=True, follow=True):
-                    line_decoded = line.decode("utf-8")
-                    f.write(line_decoded)
-                    output += line_decoded
+        if timeout is None:
+            # No timeout - run synchronously (original behavior)
+            collect_logs()
         else:
-            container.wait()
-            output = container.logs().decode("utf-8")
+            # Run with timeout using threading
+            start_time = time.time()
+            thread = threading.Thread(target=collect_logs)
+            thread.start()
+            thread.join(timeout)
 
-        return output
+            if thread.is_alive():
+                # Timeout exceeded - stop the container
+                timed_out = True
+                elapsed = time.time() - start_time
+                timeout_msg = f"\n\nTimeout error: {timeout} seconds exceeded (elapsed: {elapsed:.1f}s).\n"
+                output += timeout_msg
+                if output_path:
+                    with open(output_path, "a", encoding="utf-8") as f:
+                        f.write(timeout_msg)
+                try:
+                    container.stop(timeout=10)
+                except Exception as e:
+                    print(f"Warning: Failed to stop container after timeout: {e}")
+
+        if exception:
+            raise exception
+
+        return output, timed_out
     finally:
         if container:
             try:

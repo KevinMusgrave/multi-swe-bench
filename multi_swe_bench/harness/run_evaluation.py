@@ -193,6 +193,13 @@ def get_parser() -> ArgumentParser:
         default=True,
         help="The dataset is constructed by human or not",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        required=False,
+        default=1800,
+        help="Timeout in seconds for running each instance (default: 1800 = 30 minutes)",
+    )
 
     return parser
 
@@ -237,6 +244,7 @@ class CliArgs:
     log_level: str
     log_to_console: bool
     human_mode: bool = True
+    timeout: int = 1800
 
     def __post_init__(self):
         self._check_mode()
@@ -709,7 +717,7 @@ class CliArgs:
             self.logger.info(
                 f"Running {image_full_name} with command: {run_command}..."
             )
-            output = docker_util.run(
+            output, timed_out = docker_util.run(
                 image_full_name,
                 run_command,
                 output_path,
@@ -720,8 +728,13 @@ class CliArgs:
                         "mode": "rw",
                     }
                 },
+                timeout=self.timeout,
             )
-            return output
+            if timed_out:
+                self.logger.warning(
+                    f"Instance {image_full_name} timed out after {self.timeout} seconds"
+                )
+            return output, timed_out
 
         if not self.human_mode:
             from multi_swe_bench.utils.session_util import run_and_save_logs
