@@ -1,3 +1,4 @@
+import shlex
 import re
 import textwrap
 from typing import Optional, Union
@@ -275,6 +276,38 @@ class Logstash(Instance):
             return fix_patch_run_cmd
 
         return "bash /home/fix-run.sh"
+
+    def _required_test_selectors(self, required_tests: list[str]) -> list[str]:
+        selectors = set()
+        for test_name in required_tests:
+            if " > " not in test_name:
+                continue
+            class_name, method_name = test_name.split(" > ", 1)
+            class_name = class_name.strip()
+            method_name = method_name.strip()
+            if not class_name or not method_name:
+                continue
+            selectors.add(f"{class_name}.{method_name}")
+        return sorted(selectors)
+
+    def fix_patch_run_with_required_tests(
+        self, required_tests: list[str], fix_patch_run_cmd: str = ""
+    ) -> str:
+        selectors = self._required_test_selectors(required_tests)
+        if not selectors:
+            return self.fix_patch_run(fix_patch_run_cmd)
+
+        selectors_cmd = " ".join(
+            f"--tests {shlex.quote(selector)}" for selector in selectors
+        )
+        command = (
+            "apt update ; apt install -y patch ; "
+            f"cd /home/{self.pr.repo} ; "
+            "patch --batch --fuzz=5 -p1 -i /home/test.patch ; "
+            "patch --batch --fuzz=5 -p1 -i /home/fix.patch ; "
+            f"./gradlew clean test --continue {selectors_cmd}"
+        )
+        return f"bash -c {shlex.quote(command)}"
 
     def parse_log(self, test_log: str) -> TestResult:
         passed_tests = set()

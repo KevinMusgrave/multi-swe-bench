@@ -31,6 +31,12 @@ from multi_swe_bench.harness.test_result import Test, TestResult, TestStatus
 
 
 LOGSTASH_RSPEC_COMPLIANCE_TEST = "org.logstash.RSpecTests > rspecTests[compliance]"
+LOGSTASH_TEST_CASE_SEPARATOR = " > "
+
+
+def _is_logstash_test_case(name: str) -> bool:
+    # Filter out Gradle task lines such as `logstash-core:compileJava`.
+    return LOGSTASH_TEST_CASE_SEPARATOR in name
 
 
 @dataclass_json
@@ -73,6 +79,11 @@ class Report(PullRequestBase):
         # Known benchmark issue: this test has environment-dependent gem failures
         # in logstash and should not influence validity / p2p comparisons.
         if self.org == "elastic" and self.repo == "logstash":
+            self._tests = {
+                name: test
+                for name, test in self._tests.items()
+                if _is_logstash_test_case(name)
+            }
             self._tests.pop(LOGSTASH_RSPEC_COMPLIANCE_TEST, None)
 
         self.valid, self.error_msg = self.check()

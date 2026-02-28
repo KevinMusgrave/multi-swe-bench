@@ -22,6 +22,20 @@ from multi_swe_bench.harness.test_result import Test, TestResult
 
 
 LOGSTASH_RSPEC_COMPLIANCE_TEST = "org.logstash.RSpecTests > rspecTests[compliance]"
+LOGSTASH_TEST_CASE_SEPARATOR = " > "
+
+
+def _is_logstash_test_case(name: str) -> bool:
+    # Filter out Gradle task lines such as `logstash-core:compileJava`.
+    return LOGSTASH_TEST_CASE_SEPARATOR in name
+
+
+def _filter_logstash_test_map(tests: dict[str, Test]) -> dict[str, Test]:
+    return {
+        name: test
+        for name, test in tests.items()
+        if _is_logstash_test_case(name)
+    }
 
 
 @dataclass_json
@@ -47,6 +61,11 @@ class Dataset(PullRequest):
         # Known benchmark issue: this test has environment-dependent gem failures
         # in logstash and is intentionally excluded from p2p gating.
         if self.org == "elastic" and self.repo == "logstash":
+            self.fixed_tests = _filter_logstash_test_map(self.fixed_tests)
+            self.p2p_tests = _filter_logstash_test_map(self.p2p_tests)
+            self.f2p_tests = _filter_logstash_test_map(self.f2p_tests)
+            self.s2p_tests = _filter_logstash_test_map(self.s2p_tests)
+            self.n2p_tests = _filter_logstash_test_map(self.n2p_tests)
             self.p2p_tests.pop(LOGSTASH_RSPEC_COMPLIANCE_TEST, None)
 
     @classmethod

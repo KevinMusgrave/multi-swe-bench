@@ -711,6 +711,22 @@ class CliArgs:
             )
             return
 
+        dataset = self.dataset.get(instance.pr.id)
+        required_tests: list[str] = []
+        if dataset is not None:
+            required_tests = sorted(
+                set(dataset.f2p_tests.keys()) | set(dataset.p2p_tests.keys())
+            )
+        if required_tests:
+            self.logger.debug(
+                f"Using {len(required_tests)} required tests for {instance.pr.id}"
+            )
+
+        fix_run_command = instance.fix_patch_run_with_required_tests(
+            required_tests,
+            self.fix_patch_run_cmd,
+        )
+
         def run_and_save_output(
             image_full_name: str, run_command: str, output_path: Path
         ):
@@ -751,7 +767,7 @@ class CliArgs:
                 run_and_save_logs(
                     "fix",
                     instance.name(),
-                    f"{instance.fix_patch_run(self.fix_patch_run_cmd)} >> /home/fix_msb.log 2>&1",
+                    f"{fix_run_command} >> /home/fix_msb.log 2>&1",
                     self.logger,
                     instance_dir / FIX_PATCH_RUN_LOG_FILE,
                     "/home/fix_msb.log",
@@ -762,7 +778,7 @@ class CliArgs:
         else:
             run_and_save_output(
                 instance.name(),
-                instance.fix_patch_run(self.fix_patch_run_cmd),
+                fix_run_command,
                 instance_dir / FIX_PATCH_RUN_LOG_FILE,
             )
 

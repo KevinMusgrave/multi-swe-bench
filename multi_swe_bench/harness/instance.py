@@ -68,5 +68,12 @@ class Instance:
 
         raise NotImplementedError
 
+    def fix_patch_run_with_required_tests(
+        self, required_tests: list[str], fix_patch_run_cmd: str = ""
+    ) -> str:
+        # Default behavior for repositories without custom support:
+        # ignore required tests and use the existing fix-stage command.
+        return self.fix_patch_run(fix_patch_run_cmd)
+
     def parse_log(self, test_log: str) -> TestResult:
         raise NotImplementedError
