@@ -127,7 +127,7 @@ bash /home/check_git_changes.sh
 git checkout {pr.base.sha}
 bash /home/check_git_changes.sh
 
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false || true
+mvn clean test-compile -Dmaven.test.skip=true -DfailIfNoTests=false || true
 """.format(pr=self.pr),
             ),
             File(

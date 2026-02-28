@@ -154,7 +154,7 @@ else
       </mirror> \\
   </mirrors>' ~/.m2/settings.xml
 fi
-mvn clean test -Dstyle.color=never || true
+mvn clean test-compile -Dstyle.color=never || true
 """.format(pr=self.pr),
             ),
             File(

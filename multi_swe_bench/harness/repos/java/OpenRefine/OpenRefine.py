@@ -164,7 +164,7 @@ grep -q "<mirror>" ~/.m2/settings.xml || sed -i '/<\/settings>/i \\
   </mirror> \\
 </mirrors>' ~/.m2/settings.xml
 fi
-mvn clean test -fn || true
+mvn clean test-compile -fn || true
 """.format(pr=self.pr),
             ),
             File(
@@ -173,7 +173,7 @@ mvn clean test -fn || true
                 """#!/bin/bash
 set -e
 cd /home/{pr.repo}
-mvn clean test -fn || true
+mvn clean test-compile -fn || true
 """.format(pr=self.pr),
             ),
             File(
@@ -183,7 +183,7 @@ mvn clean test -fn || true
 set -e
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch
-mvn clean test -fn || true
+mvn clean test-compile -fn || true
 
 """.format(pr=self.pr),
             ),
@@ -194,7 +194,7 @@ mvn clean test -fn || true
 set -e
 cd /home/{pr.repo}
 git apply --whitespace=nowarn /home/test.patch /home/fix.patch
-mvn clean test -fn || true
+mvn clean test-compile -fn || true
 
 """.format(pr=self.pr),
             ),

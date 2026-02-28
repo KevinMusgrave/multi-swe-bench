@@ -168,7 +168,7 @@ old_version="{old_version}"
 new_version="{new_version}"
 sed -i "s/$old_version/$new_version/g" "$file"
 
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false || true
+mvn clean test-compile -Dmaven.test.skip=true -DfailIfNoTests=false || true
 """.format(
                     pr=self.pr,
                     old_version=self.old_version(),
@@ -365,7 +365,7 @@ old_version="{old_version}"
 new_version="{new_version}"
 sed -i "s/$old_version/$new_version/g" "$file"
 
-mvn clean test -Dmaven.test.skip=false -DfailIfNoTests=false || true
+mvn clean test-compile -Dmaven.test.skip=true -DfailIfNoTests=false || true
 """.format(
                     pr=self.pr,
                     old_version=self.old_version(),

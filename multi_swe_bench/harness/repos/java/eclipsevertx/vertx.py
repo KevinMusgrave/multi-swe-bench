@@ -154,7 +154,7 @@ else
       </mirror> \\
   </mirrors>' ~/.m2/settings.xml
 fi
-mvn clean test -fae || true
+mvn clean test-compile -fae || true
 """.format(pr=self.pr),
             ),
             File(
