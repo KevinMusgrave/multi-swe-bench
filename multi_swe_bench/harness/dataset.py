@@ -21,6 +21,9 @@ from multi_swe_bench.harness.report import Report
 from multi_swe_bench.harness.test_result import Test, TestResult
 
 
+LOGSTASH_RSPEC_COMPLIANCE_TEST = "org.logstash.RSpecTests > rspecTests[compliance]"
+
+
 @dataclass_json
 @dataclass
 class Dataset(PullRequest):
@@ -40,6 +43,11 @@ class Dataset(PullRequest):
             raise ValueError("Invalid test_patch_result: None")
         if self.fix_patch_result is None:
             raise ValueError("Invalid fix_patch_result: None")
+
+        # Known benchmark issue: this test has environment-dependent gem failures
+        # in logstash and is intentionally excluded from p2p gating.
+        if self.org == "elastic" and self.repo == "logstash":
+            self.p2p_tests.pop(LOGSTASH_RSPEC_COMPLIANCE_TEST, None)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Dataset":

@@ -30,6 +30,9 @@ from multi_swe_bench.harness.pull_request import Base, PullRequest, PullRequestB
 from multi_swe_bench.harness.test_result import Test, TestResult, TestStatus
 
 
+LOGSTASH_RSPEC_COMPLIANCE_TEST = "org.logstash.RSpecTests > rspecTests[compliance]"
+
+
 @dataclass_json
 @dataclass
 class Report(PullRequestBase):
@@ -66,6 +69,11 @@ class Report(PullRequestBase):
             test = self.test_patch_result._tests.get(test_name, TestStatus.NONE)
             fix = self.fix_patch_result._tests.get(test_name, TestStatus.NONE)
             self._tests[test_name] = Test(run, test, fix)
+
+        # Known benchmark issue: this test has environment-dependent gem failures
+        # in logstash and should not influence validity / p2p comparisons.
+        if self.org == "elastic" and self.repo == "logstash":
+            self._tests.pop(LOGSTASH_RSPEC_COMPLIANCE_TEST, None)
 
         self.valid, self.error_msg = self.check()
 
