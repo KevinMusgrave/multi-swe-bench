@@ -129,6 +129,55 @@ class LogstashComplianceExclusionTests(unittest.TestCase):
         self.assertIn("Before applying the fix patch", report.error_msg)
         self.assertIn(LOGSTASH_RSPEC_COMPLIANCE_TEST, report.error_msg)
 
+    def test_report_ignores_logstash_task_regression(self):
+        run_result = build_test_result(passed={TASK_NAME, STABLE_PASS})
+        test_result = build_test_result(
+            passed={TASK_NAME, STABLE_PASS},
+            failed={REAL_FIX},
+        )
+        fix_result = build_test_result(
+            passed={STABLE_PASS, REAL_FIX},
+            failed={TASK_NAME},
+        )
+
+        report = Report(
+            org="elastic",
+            repo="logstash",
+            number=4,
+            run_result=run_result,
+            test_patch_result=test_result,
+            fix_patch_result=fix_result,
+        )
+
+        self.assertTrue(report.valid)
+        self.assertEqual("", report.error_msg)
+        self.assertNotIn(TASK_NAME, report.p2p_tests)
+        self.assertIn(REAL_FIX, report.fixed_tests)
+
+    def test_report_still_flags_non_logstash_task_regression(self):
+        run_result = build_test_result(passed={TASK_NAME, STABLE_PASS})
+        test_result = build_test_result(
+            passed={TASK_NAME, STABLE_PASS},
+            failed={REAL_FIX},
+        )
+        fix_result = build_test_result(
+            passed={STABLE_PASS, REAL_FIX},
+            failed={TASK_NAME},
+        )
+
+        report = Report(
+            org="acme",
+            repo="service",
+            number=4,
+            run_result=run_result,
+            test_patch_result=test_result,
+            fix_patch_result=fix_result,
+        )
+
+        self.assertFalse(report.valid)
+        self.assertIn("Before applying the fix patch", report.error_msg)
+        self.assertIn(TASK_NAME, report.error_msg)
+
     def test_dataset_filters_non_test_entries_for_logstash(self):
         run_result = build_test_result(passed={BASE_TEST, TASK_NAME})
         test_result = build_test_result(passed={BASE_TEST, TASK_NAME})

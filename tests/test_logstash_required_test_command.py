@@ -53,6 +53,32 @@ def build_logstash_dataset() -> Dataset:
 
 
 class LogstashRequiredTestCommandTests(unittest.TestCase):
+    def test_selector_parsing_deduplicates_and_ignores_malformed_entries(self):
+        dataset = build_logstash_dataset()
+        instance = Logstash(
+            dataset,
+            Config(need_clone=False, global_env=None, clear_env=False),
+        )
+
+        selectors = instance._required_test_selectors(
+            [
+                " org.logstash.BTest > zCase ",
+                "org.logstash.ATest > aCase",
+                "org.logstash.ATest > aCase",  # duplicate
+                "org.logstash.BadFormat>missing-separator-spaces",
+                "logstash-core:compileJava",
+                "org.logstash.EmptyMethod > ",
+            ]
+        )
+
+        self.assertEqual(
+            selectors,
+            [
+                "org.logstash.ATest.aCase",
+                "org.logstash.BTest.zCase",
+            ],
+        )
+
     def test_builds_targeted_fix_command_from_required_tests(self):
         dataset = build_logstash_dataset()
         instance = Logstash(
@@ -88,6 +114,19 @@ class LogstashRequiredTestCommandTests(unittest.TestCase):
             fix_patch_run_cmd="custom-command",
         )
         self.assertEqual("custom-command", fallback)
+
+    def test_falls_back_to_default_fix_script_when_no_selectors_and_no_override(self):
+        dataset = build_logstash_dataset()
+        instance = Logstash(
+            dataset,
+            Config(need_clone=False, global_env=None, clear_env=False),
+        )
+
+        fallback = instance.fix_patch_run_with_required_tests(
+            ["logstash-core:compileJava"],
+            fix_patch_run_cmd="",
+        )
+        self.assertEqual("bash /home/fix-run.sh", fallback)
 
 
 if __name__ == "__main__":
