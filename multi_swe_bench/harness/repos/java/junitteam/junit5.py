@@ -256,7 +256,7 @@ sed -i '/mavenCentral()/a \    maven(url = "https://artifactory.appodeal.com/app
 sed -i '/repositories {{/a \    maven(url = "https://artifactory.appodeal.com/appodeal-public/")' buildSrc/build.gradle.kts
 sed -i -E 's/(version\s*=\s*)[^\s]+/\\15.9.4-SNAPSHOT/; s/(platformVersion\s*=\s*)[^\s]+/\\11.9.4-SNAPSHOT/; s/(vintageVersion\s*=\s*)[^\s]+/\\15.9.4-SNAPSHOT/' gradle.properties
 
-./gradlew clean test --continue || true
+./gradlew --no-daemon clean testClasses || true
 """.format(pr=self.pr),
                 ),
                 File(
@@ -434,7 +434,7 @@ git reset --hard
 bash /home/check_git_changes.sh
 git checkout {pr.base.sha}
 bash /home/check_git_changes.sh
-./gradlew clean test --continue || true
+./gradlew --no-daemon clean testClasses || true
 """.format(pr=self.pr),
             ),
             File(

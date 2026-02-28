@@ -139,7 +139,7 @@ bash /home/check_git_changes.sh
 git checkout {pr.base.sha}
 bash /home/check_git_changes.sh
 
-./gradlew clean test --continue || true
+./gradlew --no-daemon clean testClasses || true
 
 """.format(pr=self.pr),
             ),
@@ -312,7 +312,7 @@ bash /home/check_git_changes.sh
 git checkout {pr.base.sha}
 bash /home/check_git_changes.sh
 
-./gradlew clean test --continue || true
+./gradlew --no-daemon clean testClasses || true
 
 """.format(pr=self.pr),
             ),
